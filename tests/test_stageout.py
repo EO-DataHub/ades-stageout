@@ -3,19 +3,18 @@ import os
 from unittest import mock
 from unittest.mock import patch
 
-import pytest
 from kubernetes.client.rest import ApiException
-from pystac.stac_io import DefaultStacIO
 
 from stageout import (
     CustomStacIO,
     construct_collection_and_upload_assets,
+    get_aws_client,
     get_bucket_from_workspace,
+    get_current_namespace,
     main,
     send_to_ingester,
     upload_directory,
     upload_items,
-    get_aws_client
 )
 
 
@@ -247,6 +246,7 @@ def test_get_bucket_from_workspace_success(
 
     result = get_bucket_from_workspace("test_workspace")
 
+    # Check result is as expected
     assert result == "test_bucket"
 
 
@@ -265,43 +265,11 @@ def test_get_bucket_from_workspace_exception(
     mock_kubernetes_config_load.return_value = None
 
     result = get_bucket_from_workspace("test_workspace")
+
+    # Check result is None
+    assert not result
+    # Check exception was handled
     assert "Exception when fetching workspace bucket" in capsys.readouterr().err
-
-
-@patch("pulsar.Client")
-@patch.dict(os.environ, {"PULSAR_URL": "pulsar://test-url"})
-def test_send_to_ingester(mock_pulsar_client):
-
-    # Configure mocks
-    mock_pulsar_client_instance = mock.Mock()
-    mock_pulsar_client.return_value = mock_pulsar_client_instance
-    mock_pulsar_producer = mock.Mock()
-    mock_pulsar_producer.send.return_value = None
-    mock_pulsar_producer.close.return_value = None
-    mock_pulsar_client_instance.create_producer.return_value = mock_pulsar_producer
-
-    # Configure test variables
-    test_harvest_list = ["test1", "test2"]
-    test_bucket = "test_bucket"
-    test_workspace = "test_workspace"
-
-    expected_message = {
-        "id": f"ades-outputs/{test_workspace}",
-        "workspace": test_workspace,
-        "repository": "",
-        "branch": "main",
-        "bucket_name": test_bucket,
-        "updated_keys": [],
-        "added_keys": test_harvest_list,
-        "deleted_keys": [],
-        "source": test_workspace,
-        "target": f"user-datasets/{test_workspace}",
-    }
-
-    send_to_ingester(test_harvest_list, test_bucket, test_workspace)
-
-    # Check calls are as expected
-    mock_pulsar_producer.send.assert_called_once_with(json.dumps(expected_message).encode("utf-8"))
 
 
 @patch("pulsar.Client")
@@ -650,13 +618,22 @@ def test_get_aws_client_with_credentials(mock_boto3_client):
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
 
-    result = get_aws_client(aws_access_key_id, aws_secret_access_key, "test_endpoint", "test-region")
+    result = get_aws_client(
+        aws_access_key_id, aws_secret_access_key, "test_endpoint", "test-region"
+    )
 
     # Check client is created
     assert result == "example_s3_client"
 
     # Check calls are as expected
-    mock_boto3_client.assert_called_once_with("s3", aws_access_key_id="test_access_key", aws_secret_access_key="test_secret_key", endpoint_url="test_endpoint", region_name="test-region")
+    mock_boto3_client.assert_called_once_with(
+        "s3",
+        aws_access_key_id="test_access_key",
+        aws_secret_access_key="test_secret_key",
+        endpoint_url="test_endpoint",
+        region_name="test-region",
+    )
+
 
 @patch("boto3.client")
 def test_get_aws_client_no_credentials(mock_boto3_client):
@@ -671,6 +648,7 @@ def test_get_aws_client_no_credentials(mock_boto3_client):
 
     # Check calls are as expected
     mock_boto3_client.assert_called_once_with("s3")
+
 
 class Link:
     def __init__(self, rel, href):
@@ -814,6 +792,31 @@ def test_main_access_point(
         "eodhp-dev-workspaces",
         "test_workspace",
     )
+
+
+@patch("builtins.open")
+def test_get_current_namespace(mock_open):
+
+    # Configure mocks
+    mock_open.return_value.__enter__.return_value.read.return_value = " test_namespace "
+
+    result = get_current_namespace()
+
+    # Check result is as expected
+    assert result == "test_namespace"
+
+
+@patch("builtins.open")
+def test_get_current_namespace_error(mock_open):
+
+    # Configure mocks
+    # Simulate error when opening file
+    mock_open.return_value.__enter__.return_value.read.side_effect = IOError
+
+    result = get_current_namespace()
+
+    # Check result is as expected
+    assert result == "default"
 
 
 @patch.dict(
