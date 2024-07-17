@@ -72,6 +72,13 @@ def upload_directory(s3_client: boto3.client, local_path: str, bucket: str, s3_p
             upload_path = os.path.join(upload_path_base, file)
             s3_client.upload_file(os.path.join(root, file), bucket, upload_path)
 
+def get_current_namespace():
+    try:
+        with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace") as f:
+            return f.read().strip()
+    except IOError:
+        # Return default namespace
+        return "default"
 
 def get_bucket_from_workspace(workspace_name: str) -> str:
     # Load the kubernetes config
@@ -81,9 +88,7 @@ def get_bucket_from_workspace(workspace_name: str) -> str:
     v1 = client.CoreV1Api()
     try:
         # Read the ConfigMap
-        configmap = v1.read_namespaced_config_map(
-            name="workspace-config", namespace="ws-" + workspace_name
-        )
+        configmap = v1.read_namespaced_config_map(name="workspace-config", namespace=get_current_namespace())
         bucket = configmap.data.get("S3_BUCKET_WORKSPACE")
         return bucket
     except ApiException as e:
