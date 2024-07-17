@@ -46,7 +46,9 @@ class CustomStacIO(DefaultStacIO):
             super().write_text(dest, txt, *args, **kwargs)
 
 
-def get_aws_client(aws_access_key_id: str, aws_secret_access_key: str, endpoint_url: str, region_name: str) -> boto3.client:
+def get_aws_client(
+    aws_access_key_id: str, aws_secret_access_key: str, endpoint_url: str, region_name: str
+) -> boto3.client:
     # Configure AWS client
     if aws_access_key_id and aws_secret_access_key:
         s3_client = boto3.client(
@@ -60,6 +62,7 @@ def get_aws_client(aws_access_key_id: str, aws_secret_access_key: str, endpoint_
         s3_client = boto3.client("s3")
     return s3_client
 
+
 def upload_directory(s3_client: boto3.client, local_path: str, bucket: str, s3_path: str):
     base_directory = os.path.basename(local_path)
     for root, _, files in os.walk(local_path):
@@ -72,6 +75,7 @@ def upload_directory(s3_client: boto3.client, local_path: str, bucket: str, s3_p
             upload_path = os.path.join(upload_path_base, file)
             s3_client.upload_file(os.path.join(root, file), bucket, upload_path)
 
+
 def get_current_namespace():
     try:
         with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace") as f:
@@ -79,6 +83,7 @@ def get_current_namespace():
     except IOError:
         # Return default namespace
         return "default"
+
 
 def get_bucket_from_workspace(workspace_name: str) -> str:
     # Load the kubernetes config
@@ -88,7 +93,9 @@ def get_bucket_from_workspace(workspace_name: str) -> str:
     v1 = client.CoreV1Api()
     try:
         # Read the ConfigMap
-        configmap = v1.read_namespaced_config_map(name="workspace-config", namespace=get_current_namespace())
+        configmap = v1.read_namespaced_config_map(
+            name="workspace-config", namespace=get_current_namespace()
+        )
         bucket = configmap.data.get("S3_BUCKET_WORKSPACE")
         return bucket
     except ApiException as e:
@@ -264,7 +271,6 @@ def main(
     for index, link in enumerate(cat.links):
         if link.rel == "root":
             cat.links.pop(index)  # remove root link
-
 
     collection = construct_collection_and_upload_assets(
         cat,
