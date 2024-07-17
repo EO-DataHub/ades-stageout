@@ -122,8 +122,8 @@ def send_to_ingester(harvest_list: List[str], bucket: str, workspace: str):
     try:
         # send message
         msg = json.dumps(message_dict)
-        print("Sending message via pulsar ...")
-        print(msg)
+        print("Sending message via pulsar ...", file=sys.stderr)
+        print(msg, file=sys.stderr)
         producer.send(msg.encode("utf-8"))
     finally:
         producer.close()
@@ -147,7 +147,6 @@ def construct_collection_and_upload_assets(
         item.set_collection(collection)
 
         collection.add_item(item)
-        print("here")
 
         for key, asset in item.get_assets().items():
             s3_path = os.path.normpath(
