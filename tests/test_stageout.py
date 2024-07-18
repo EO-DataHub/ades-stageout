@@ -670,9 +670,7 @@ class Link:
 @patch("pystac.Collection")
 @patch("pystac.read_file")
 @patch("shutil.copytree")
-@patch("boto3.client")
 def test_main_access_point(
-    mock_boto3_client,
     mock_shutil_copytree,
     mock_pystac_read_file,
     mock_pystac_Collection,
@@ -770,6 +768,7 @@ def test_main_access_point(
         f"test_workspace/{subfolder}",
         "test_workspace",
         workspace_domain,
+        "eodhp-dev-workspaces",
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
@@ -932,6 +931,7 @@ def test_main_no_access_point(
         subfolder,
         "test_workspace",
         workspace_domain,
+        bucket,
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
