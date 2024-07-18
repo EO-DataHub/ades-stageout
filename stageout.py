@@ -238,7 +238,6 @@ def main(
     # Identify access point
     access_point = get_bucket_from_workspace(workspace)
     if access_point:
-        bucket = "eodhp-dev-workspaces"
         subfolder = os.path.join(workspace, subfolder)
         s3_endpoint = access_point
         print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
