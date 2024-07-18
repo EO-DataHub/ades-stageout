@@ -281,6 +281,7 @@ def main(
         subfolder,
         workspace,
         workspace_domain,
+        bucket,
     )
 
     collection.update_extent_from_items()
