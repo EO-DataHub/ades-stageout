@@ -355,17 +355,15 @@ def test_construct_collection_and_upload_assets():
     workspace_domain = "test.workspace.domain.com"
     bucket = "test_bucket"
 
+    s3_data = {"s3_endpoint": s3_endpoint, "subfolder": subfolder, "workspace": workspace, "workspace_domain": workspace_domain, "bucket": bucket}
+
     result = construct_collection_and_upload_assets(
         mock_catalog,
         mock_collection,
         cat_id,
         collection_id,
         mock_s3_client,
-        s3_endpoint,
-        subfolder,
-        workspace,
-        workspace_domain,
-        bucket,
+        s3_data,
     )
 
     # Check calls are as expected
@@ -463,17 +461,15 @@ def test_construct_collection_and_upload_assets_directory(mock_upload_directory)
     workspace_domain = "test.workspace.domain.com"
     bucket = "test_bucket"
 
+    s3_data = {"s3_endpoint": s3_endpoint, "subfolder": subfolder, "workspace": workspace, "workspace_domain": workspace_domain, "bucket": bucket}
+
     result = construct_collection_and_upload_assets(
         mock_catalog,
         mock_collection,
         cat_id,
         collection_id,
         mock_s3_client,
-        s3_endpoint,
-        subfolder,
-        workspace,
-        workspace_domain,
-        bucket,
+        s3_data,
     )
 
     # Check calls are as expected
@@ -549,17 +545,15 @@ def test_construct_collection_and_upload_assets_exception(capsys):
     workspace_domain = "test.workspace.domain.com"
     bucket = "test_bucket"
 
+    s3_data = {"s3_endpoint": s3_endpoint, "subfolder": subfolder, "workspace": workspace, "workspace_domain": workspace_domain, "bucket": bucket}
+
     result = construct_collection_and_upload_assets(
         mock_catalog,
         mock_collection,
         cat_id,
         collection_id,
         mock_s3_client,
-        s3_endpoint,
-        subfolder,
-        workspace,
-        workspace_domain,
-        bucket,
+        s3_data,
     )
 
     # Check exceptions are handled correctly
@@ -656,7 +650,11 @@ class Link:
 
 @patch.dict(
     os.environ,
-    {"AWS_ACCESS_KEY_ID": "", "AWS_SECRET_ACCESS_KEY": "", "WORKSPACE": "test_workspace"},
+    {"AWS_ACCESS_KEY_ID": "", "AWS_SECRET_ACCESS_KEY": "", "WORKSPACE": "test_workspace",
+    "endpoint_url" : "s3://test-endpoint",
+    "AWS_REGION" : "test_region",
+    "AWS_S3_ENDPOINT" : "s3://test-endpoint/path",
+    "WORKSPACE_DOMAIN" : "test.workspace.domain.com"},
 )
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
@@ -686,12 +684,6 @@ def test_main_access_point(
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
-    aws_access_key = "test_access_key"
-    aws_secret_access_key = "test_secret_key"
-    endpoint_url = "s3://test-endpoint"
-    aws_region = "test_region"
-    s3_endpoint = "s3://test-endpoint/path"
-    workspace_domain = "test.workspace.domain.com"
 
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
@@ -726,18 +718,7 @@ def test_main_access_point(
 
     mock_send_to_ingester.return_value = None
 
-    main(
-        collection_id,
-        cat_url,
-        bucket,
-        subfolder,
-        aws_access_key,
-        aws_secret_access_key,
-        endpoint_url,
-        aws_region,
-        s3_endpoint,
-        workspace_domain,
-    )
+    main(collection_id, cat_url, bucket, subfolder)
 
     # Check calls are as expected
     assert mock_collection.update_extent_from_items.call_count == 1
@@ -756,17 +737,16 @@ def test_main_access_point(
         keywords=["eoepca"],
         license="proprietary",
     )
+
+    expected_s3_data = {"s3_endpoint": "test-access-point/test-bucket", "subfolder": f"test_workspace/{subfolder}", "workspace": "test_workspace", "workspace_domain": "test.workspace.domain.com", "bucket": bucket}
+
     mock_construct_collection_and_upload_assets.assert_called_once_with(
         mock_catalog,
         mock_collection,
         f"cat_{collection_id}",
         f"col_{collection_id}",
         mock_boto3_client_instance,
-        "test-access-point/test-bucket",
-        f"test_workspace/{subfolder}",
-        "test_workspace",
-        workspace_domain,
-        bucket,
+        expected_s3_data,
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
@@ -818,7 +798,11 @@ def test_get_current_namespace_error(mock_open):
 
 @patch.dict(
     os.environ,
-    {"AWS_ACCESS_KEY_ID": "", "AWS_SECRET_ACCESS_KEY": "", "WORKSPACE": "test_workspace"},
+    {"AWS_ACCESS_KEY_ID": "", "AWS_SECRET_ACCESS_KEY": "", "WORKSPACE": "test_workspace",
+    "endpoint_url" : "s3://test-endpoint",
+    "AWS_REGION" : "test_region",
+    "AWS_S3_ENDPOINT" : "s3://test-endpoint/path",
+    "WORKSPACE_DOMAIN" : "test.workspace.domain.com"},
 )
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
@@ -830,9 +814,7 @@ def test_get_current_namespace_error(mock_open):
 @patch("pystac.Collection")
 @patch("pystac.read_file")
 @patch("shutil.copytree")
-@patch("boto3.client")
 def test_main_no_access_point(
-    mock_boto3_client,
     mock_shutil_copytree,
     mock_pystac_read_file,
     mock_pystac_Collection,
@@ -850,12 +832,6 @@ def test_main_no_access_point(
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
-    aws_access_key = "test_access_key"
-    aws_secret_access_key = "test_secret_key"
-    endpoint_url = "s3://test-endpoint"
-    aws_region = "test_region"
-    s3_endpoint = "s3://test-endpoint/path"
-    workspace_domain = "test.workspace.domain.com"
 
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
@@ -891,18 +867,7 @@ def test_main_no_access_point(
 
     mock_send_to_ingester.return_value = None
 
-    main(
-        collection_id,
-        cat_url,
-        bucket,
-        subfolder,
-        aws_access_key,
-        aws_secret_access_key,
-        endpoint_url,
-        aws_region,
-        s3_endpoint,
-        workspace_domain,
-    )
+    main(collection_id, cat_url, bucket, subfolder)
 
     # Check calls are as expected
     assert mock_collection.update_extent_from_items.call_count == 1
@@ -919,17 +884,16 @@ def test_main_no_access_point(
         keywords=["eoepca"],
         license="proprietary",
     )
+
+    expected_s3_data = {"s3_endpoint": bucket, "subfolder": subfolder, "workspace": "test_workspace", "workspace_domain": "test.workspace.domain.com", "bucket": bucket}
+
     mock_construct_collection_and_upload_assets.assert_called_once_with(
         mock_catalog,
         mock_collection,
         f"cat_{collection_id}",
         f"col_{collection_id}",
         mock_boto3_client_instance,
-        s3_endpoint,
-        subfolder,
-        "test_workspace",
-        workspace_domain,
-        bucket,
+        expected_s3_data,
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
