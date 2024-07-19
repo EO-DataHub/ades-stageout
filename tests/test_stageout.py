@@ -18,18 +18,19 @@ from stageout import (
 )
 
 
-@patch("botocore.session.Session")
-@patch("os.environ")
-@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_init_env_var(mock_environ, mock_botocore_session_class, monkeypatch):
-    # Set up mock environment variables
-    mock_environ.__getitem__.side_effect = lambda key: {
+@patch.dict(
+    os.environ,
+    {
         "AWS_REGION": "mock_region",
         "AWS_S3_ENDPOINT": "mock_endpoint",
         "WORKSPACE_DOMAIN": "mock_domain",
         "AWS_ACCESS_KEY_ID": "mock_access_key",
         "AWS_SECRET_ACCESS_KEY": "mock_secret_key",
-    }.get(key, "")
+    },
+)
+@patch("botocore.session.Session")
+@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
+def test_custom_stac_init_env_var(mock_botocore_session_class):
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -58,18 +59,19 @@ def test_custom_stac_init_env_var(mock_environ, mock_botocore_session_class, mon
     assert test_stac_io.s3_client == mock_botocore_session_client
 
 
-@patch("botocore.session.Session")
-@patch("os.environ")
-@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_init_service_account(mock_environ, mock_botocore_session_class, monkeypatch):
-    # Set up mock environment variables
-    mock_environ.__getitem__.side_effect = lambda key: {
+@patch.dict(
+    os.environ,
+    {
         "AWS_REGION": "mock_region",
         "AWS_S3_ENDPOINT": "mock_endpoint",
         "WORKSPACE_DOMAIN": "mock_domain",
         "AWS_ACCESS_KEY_ID": "",
         "AWS_SECRET_ACCESS_KEY": "",
-    }.get(key, "")
+    },
+)
+@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
+@patch("botocore.session.Session")
+def test_custom_stac_init_service_account(mock_botocore_session_class):
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -91,21 +93,20 @@ def test_custom_stac_init_service_account(mock_environ, mock_botocore_session_cl
     assert test_stac_io.s3_client == mock_botocore_session_client
 
 
-@patch("pystac.stac_io.DefaultStacIO")
-@patch("botocore.session.Session")
-@patch("os.environ")
-@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_write_text_s3(
-    mock_environ, mock_botocore_session_class, mock_default_stacio, monkeypatch
-):
-    # Set up mock environment variables
-    mock_environ.__getitem__.side_effect = lambda key: {
+@patch.dict(
+    os.environ,
+    {
         "AWS_REGION": "mock_region",
         "AWS_S3_ENDPOINT": "mock_endpoint",
         "WORKSPACE_DOMAIN": "mock_domain",
         "AWS_ACCESS_KEY_ID": "",
         "AWS_SECRET_ACCESS_KEY": "",
-    }.get(key, "")
+    },
+)
+@patch("pystac.stac_io.DefaultStacIO")
+@patch("botocore.session.Session")
+@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
+def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_stacio):
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -124,7 +125,7 @@ def test_custom_stac_write_text_s3(
     }
 
     # Instantiate CustomStacIO
-    test_stac_io = CustomStacIO(s3_endpoint = "example/endpoint/for/test")
+    test_stac_io = CustomStacIO(s3_endpoint="example/endpoint/for/test")
 
     # Test write_text
     test_stac_io.write_text(
@@ -136,22 +137,20 @@ def test_custom_stac_write_text_s3(
     mock_botocore_session_client.put_object.assert_called_once_with(**expected_args)
 
 
-@patch("pystac.stac_io.DefaultStacIO.write_text")
-@patch("botocore.session.Session")
-@patch("os.environ")
-@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_write_text_super(
-    mock_environ, mock_botocore_session_class, mock_default_stacio_write_text, monkeypatch
-):
-    # Set up mock environment variables
-    mock_environ.__getitem__.side_effect = lambda key: {
+@patch.dict(
+    os.environ,
+    {
         "AWS_REGION": "mock_region",
         "AWS_S3_ENDPOINT": "mock_endpoint",
         "WORKSPACE_DOMAIN": "mock_domain",
         "AWS_ACCESS_KEY_ID": "",
         "AWS_SECRET_ACCESS_KEY": "",
-    }.get(key, "")
-
+    },
+)
+@patch("pystac.stac_io.DefaultStacIO.write_text")
+@patch("botocore.session.Session")
+@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
+def test_custom_stac_write_text_super(mock_botocore_session_class, mock_default_stacio_write_text):
     # Create mocks
     mock_botocore_session = mock.Mock()
     mock_botocore_session_client = mock.Mock()
@@ -608,19 +607,17 @@ def test_upload_items(mock_pystac_write_file):
     }
 
 
+@patch.dict(
+    os.environ,
+    {"AWS_ACCESS_KEY_ID": "test_access_key", "AWS_SECRET_ACCESS_KEY": "test_secret_key"},
+)
 @patch("boto3.client")
 def test_get_aws_client_with_credentials(mock_boto3_client):
-
-    # Configure test variables
-    aws_access_key_id = "test_access_key"
-    aws_secret_access_key = "test_secret_key"
 
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
 
-    result = get_aws_client(
-        aws_access_key_id, aws_secret_access_key, "test_endpoint", "test-region"
-    )
+    result = get_aws_client("test_endpoint", "test-region")
 
     # Check client is created
     assert result == "example_s3_client"
@@ -635,13 +632,14 @@ def test_get_aws_client_with_credentials(mock_boto3_client):
     )
 
 
+@patch.dict(os.environ, {}, clear=True)
 @patch("boto3.client")
 def test_get_aws_client_no_credentials(mock_boto3_client):
 
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
 
-    result = get_aws_client(None, None, "test_endpoint", "test-region")
+    result = get_aws_client("test_endpoint", "test-region")
 
     # Check client is created
     assert result == "example_s3_client"
