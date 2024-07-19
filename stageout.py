@@ -18,9 +18,9 @@ from pystac.stac_io import DefaultStacIO, StacIO
 class CustomStacIO(DefaultStacIO):
     """Custom STAC IO class that uses boto3 to read from S3."""
 
-    def __init__(self):
-        self.s3_endpoint = sys.argv[2]
+    def __init__(self, s3_endpoint=None):
         self.session = botocore.session.Session()
+        self.s3_endpoint = s3_endpoint
         if os.environ["AWS_ACCESS_KEY_ID"] and os.environ["AWS_SECRET_ACCESS_KEY"]:
             self.s3_client = self.session.create_client(
                 service_name="s3",
@@ -85,7 +85,7 @@ def get_current_namespace():
         return "default"
 
 
-def get_bucket_from_workspace(workspace_name: str) -> str:
+def get_bucket_from_workspace() -> str:
     # Load the kubernetes config
     config.load_incluster_config()
 
@@ -236,13 +236,18 @@ def main(
     workspace = os.environ["WORKSPACE"]
 
     # Identify access point
-    access_point = get_bucket_from_workspace(workspace)
+    access_point = get_bucket_from_workspace()
     if access_point:
         subfolder = os.path.join(workspace, subfolder)
         s3_endpoint = access_point
         print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
-    StacIO.set_default(CustomStacIO)
+    def custom_stac_io_factory(s3_endpoint):
+        def create_custom_stac_io():
+            return CustomStacIO(s3_endpoint=s3_endpoint)
+        return create_custom_stac_io
+
+    StacIO.set_default(custom_stac_io_factory(s3_endpoint))
 
     # create a STAC collection for the process
     date = datetime.now().strftime("%Y-%m-%d")
