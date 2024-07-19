@@ -9,7 +9,7 @@ from stageout import (
     CustomStacIO,
     construct_collection_and_upload_assets,
     get_aws_client,
-    get_bucket_from_workspace,
+    get_bucket_from_namespace,
     get_current_namespace,
     main,
     send_to_ingester,
@@ -118,13 +118,13 @@ def test_custom_stac_write_text_s3(
     # Configure expected arguments
     expected_args = {
         "Body": "test_text".encode("UTF-8"),
-        "Bucket": "bucket",
+        "Bucket": "example/endpoint/for/test",
         "Key": "path",
         "ContentType": "application/geo+json",
     }
 
     # Instantiate CustomStacIO
-    test_stac_io = CustomStacIO()
+    test_stac_io = CustomStacIO(s3_endpoint = "example/endpoint/for/test")
 
     # Test write_text
     test_stac_io.write_text(
@@ -232,7 +232,7 @@ class MockConfigMapResponse:
 
 @patch("kubernetes.client.CoreV1Api")
 @patch("kubernetes.config.load_incluster_config")
-def test_get_bucket_from_workspace_success(
+def test_get_bucket_from_namespace_success(
     mock_kubernetes_config_load, mock_kubernetes_client_coreV1Api
 ):
 
@@ -244,7 +244,7 @@ def test_get_bucket_from_workspace_success(
     mock_kubernetes_client_coreV1Api.return_value = mock_CoreV1Api
     mock_kubernetes_config_load.return_value = None
 
-    result = get_bucket_from_workspace("test_workspace")
+    result = get_bucket_from_namespace()
 
     # Check result is as expected
     assert result == "test_bucket"
@@ -252,7 +252,7 @@ def test_get_bucket_from_workspace_success(
 
 @patch("kubernetes.client.CoreV1Api")
 @patch("kubernetes.config.load_incluster_config")
-def test_get_bucket_from_workspace_exception(
+def test_get_bucket_from_namespace_exception(
     mock_kubernetes_config_load, mock_kubernetes_client_coreV1Api, capsys
 ):
 
@@ -264,7 +264,7 @@ def test_get_bucket_from_workspace_exception(
     mock_kubernetes_client_coreV1Api.return_value = mock_CoreV1Api
     mock_kubernetes_config_load.return_value = None
 
-    result = get_bucket_from_workspace("test_workspace")
+    result = get_bucket_from_namespace()
 
     # Check result is None
     assert not result
@@ -663,7 +663,7 @@ class Link:
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
 @patch("stageout.upload_items")
-@patch("stageout.get_bucket_from_workspace")
+@patch("stageout.get_bucket_from_namespace")
 @patch("stageout.construct_collection_and_upload_assets")
 @patch("pystac.write_file")
 @patch("pystac.Extent")
@@ -677,7 +677,7 @@ def test_main_access_point(
     mock_pystac_Extent,
     mock_pystac_write_file,
     mock_construct_collection_and_upload_assets,
-    mock_get_bucket_from_workspace,
+    mock_get_bucket_from_namespace,
     mock_upload_items,
     mock_send_to_ingester,
     mock_get_aws_client,
@@ -720,7 +720,7 @@ def test_main_access_point(
     mock_pystac_Collection.return_value = mock_collection
 
     mock_pystac_Extent.return_value = "some-extent"
-    mock_get_bucket_from_workspace.return_value = "test-access-point/test-bucket"
+    mock_get_bucket_from_namespace.return_value = "test-access-point/test-bucket"
 
     mock_construct_collection_and_upload_assets.return_value = mock_collection
 
@@ -746,14 +746,14 @@ def test_main_access_point(
     assert mock_catalog.clear_items.call_count == 1
     mock_catalog.add_child.assert_called_once_with(mock_collection)
     mock_catalog.normalize_hrefs.assert_called_once_with(
-        f"s3://eodhp-dev-workspaces/test_workspace/{subfolder}"
+        f"s3://{bucket}/test_workspace/{subfolder}"
     )
     mock_pystac_Collection.assert_called_once_with(
         id=f"col_{collection_id}",
         description="description",
         extent="some-extent",
         title="Result Collection",
-        href=f"s3://eodhp-dev-workspaces/test_workspace/{subfolder}/cat_{collection_id}/col_{collection_id}.json",
+        href=f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/col_{collection_id}.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -768,12 +768,12 @@ def test_main_access_point(
         f"test_workspace/{subfolder}",
         "test_workspace",
         workspace_domain,
-        "eodhp-dev-workspaces",
+        bucket,
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"s3://eodhp-dev-workspaces/test_workspace/{subfolder}/cat_{collection_id}/test_collection.json"
+        "dest_href": f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/test_collection.json"
     }
     assert calls[1][0][0] == mock_catalog
     assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{collection_id}.json"}
@@ -788,7 +788,7 @@ def test_main_access_point(
             f"test_workspace/{subfolder}/cat_{collection_id}/{collection_id}.json",
             f"path/to/catalog/cat_{collection_id}.json",
         ],
-        "eodhp-dev-workspaces",
+        bucket,
         "test_workspace",
     )
 
@@ -825,7 +825,7 @@ def test_get_current_namespace_error(mock_open):
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
 @patch("stageout.upload_items")
-@patch("stageout.get_bucket_from_workspace")
+@patch("stageout.get_bucket_from_namespace")
 @patch("stageout.construct_collection_and_upload_assets")
 @patch("pystac.write_file")
 @patch("pystac.Extent")
@@ -841,7 +841,7 @@ def test_main_no_access_point(
     mock_pystac_Extent,
     mock_pystac_write_file,
     mock_construct_collection_and_upload_assets,
-    mock_get_bucket_from_workspace,
+    mock_get_bucket_from_namespace,
     mock_upload_items,
     mock_send_to_ingester,
     mock_get_aws_client,
@@ -885,7 +885,7 @@ def test_main_no_access_point(
 
     mock_pystac_Extent.return_value = "some-extent"
 
-    mock_get_bucket_from_workspace.return_value = None
+    mock_get_bucket_from_namespace.return_value = None
 
     mock_construct_collection_and_upload_assets.return_value = mock_collection
 
