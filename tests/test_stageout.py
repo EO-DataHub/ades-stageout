@@ -31,6 +31,7 @@ from stageout import (
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
 def test_custom_stac_init_env_var(mock_botocore_session_class):
+    """Test the CustomStacIO class given provided environment variables for AWS credentials"""
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -72,6 +73,8 @@ def test_custom_stac_init_env_var(mock_botocore_session_class):
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
 @patch("botocore.session.Session")
 def test_custom_stac_init_service_account(mock_botocore_session_class):
+    """Test the CustomStacIO class without provided environment variables for AWS credentials,
+    instead using current service account"""
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -151,6 +154,7 @@ def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_sta
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
 def test_custom_stac_write_text_super(mock_botocore_session_class, mock_default_stacio_write_text):
+    """Test the CustomStacIO write text function with super call, not using S3"""
     # Create mocks
     mock_botocore_session = mock.Mock()
     mock_botocore_session_client = mock.Mock()
@@ -318,6 +322,7 @@ class Asset:
 
 
 def test_construct_collection_and_upload_assets():
+    """Test construct_collection_and_upload_assets function with assets that are files"""
 
     # Configure mocks
     mock_catalog = mock.Mock()
@@ -355,7 +360,13 @@ def test_construct_collection_and_upload_assets():
     workspace_domain = "test.workspace.domain.com"
     bucket = "test_bucket"
 
-    s3_data = {"s3_endpoint": s3_endpoint, "subfolder": subfolder, "workspace": workspace, "workspace_domain": workspace_domain, "bucket": bucket}
+    s3_data = {
+        "s3_endpoint": s3_endpoint,
+        "subfolder": subfolder,
+        "workspace": workspace,
+        "workspace_domain": workspace_domain,
+        "bucket": bucket,
+    }
 
     result = construct_collection_and_upload_assets(
         mock_catalog,
@@ -423,6 +434,7 @@ def test_construct_collection_and_upload_assets():
 
 @patch("stageout.upload_directory")
 def test_construct_collection_and_upload_assets_directory(mock_upload_directory):
+    """Test construct_collection_and_upload_assets function with assets that are directories"""
 
     # Configure mocks
     mock_catalog = mock.Mock()
@@ -461,7 +473,13 @@ def test_construct_collection_and_upload_assets_directory(mock_upload_directory)
     workspace_domain = "test.workspace.domain.com"
     bucket = "test_bucket"
 
-    s3_data = {"s3_endpoint": s3_endpoint, "subfolder": subfolder, "workspace": workspace, "workspace_domain": workspace_domain, "bucket": bucket}
+    s3_data = {
+        "s3_endpoint": s3_endpoint,
+        "subfolder": subfolder,
+        "workspace": workspace,
+        "workspace_domain": workspace_domain,
+        "bucket": bucket,
+    }
 
     result = construct_collection_and_upload_assets(
         mock_catalog,
@@ -545,7 +563,13 @@ def test_construct_collection_and_upload_assets_exception(capsys):
     workspace_domain = "test.workspace.domain.com"
     bucket = "test_bucket"
 
-    s3_data = {"s3_endpoint": s3_endpoint, "subfolder": subfolder, "workspace": workspace, "workspace_domain": workspace_domain, "bucket": bucket}
+    s3_data = {
+        "s3_endpoint": s3_endpoint,
+        "subfolder": subfolder,
+        "workspace": workspace,
+        "workspace_domain": workspace_domain,
+        "bucket": bucket,
+    }
 
     result = construct_collection_and_upload_assets(
         mock_catalog,
@@ -607,6 +631,7 @@ def test_upload_items(mock_pystac_write_file):
 )
 @patch("boto3.client")
 def test_get_aws_client_with_credentials(mock_boto3_client):
+    """Test get_aws_client function with provided AWS credentials"""
 
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
@@ -629,6 +654,7 @@ def test_get_aws_client_with_credentials(mock_boto3_client):
 @patch.dict(os.environ, {}, clear=True)
 @patch("boto3.client")
 def test_get_aws_client_no_credentials(mock_boto3_client):
+    """Test get_aws_client function without provided AWS credentials, instead using service account"""
 
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
@@ -650,11 +676,15 @@ class Link:
 
 @patch.dict(
     os.environ,
-    {"AWS_ACCESS_KEY_ID": "", "AWS_SECRET_ACCESS_KEY": "", "WORKSPACE": "test_workspace",
-    "endpoint_url" : "s3://test-endpoint",
-    "AWS_REGION" : "test_region",
-    "AWS_S3_ENDPOINT" : "s3://test-endpoint/path",
-    "WORKSPACE_DOMAIN" : "test.workspace.domain.com"},
+    {
+        "AWS_ACCESS_KEY_ID": "",
+        "AWS_SECRET_ACCESS_KEY": "",
+        "WORKSPACE": "test_workspace",
+        "endpoint_url": "s3://test-endpoint",
+        "AWS_REGION": "test_region",
+        "AWS_S3_ENDPOINT": "s3://test-endpoint/path",
+        "WORKSPACE_DOMAIN": "test.workspace.domain.com",
+    },
 )
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
@@ -678,6 +708,7 @@ def test_main_access_point(
     mock_send_to_ingester,
     mock_get_aws_client,
 ):
+    """Test main function with no AWS credentials, instead using access point"""
 
     # Configure test variables
     collection_id = "test_collection"
@@ -738,7 +769,13 @@ def test_main_access_point(
         license="proprietary",
     )
 
-    expected_s3_data = {"s3_endpoint": "test-access-point/test-bucket", "subfolder": f"test_workspace/{subfolder}", "workspace": "test_workspace", "workspace_domain": "test.workspace.domain.com", "bucket": bucket}
+    expected_s3_data = {
+        "s3_endpoint": "test-access-point/test-bucket",
+        "subfolder": f"test_workspace/{subfolder}",
+        "workspace": "test_workspace",
+        "workspace_domain": "test.workspace.domain.com",
+        "bucket": bucket,
+    }
 
     mock_construct_collection_and_upload_assets.assert_called_once_with(
         mock_catalog,
@@ -798,11 +835,15 @@ def test_get_current_namespace_error(mock_open):
 
 @patch.dict(
     os.environ,
-    {"AWS_ACCESS_KEY_ID": "", "AWS_SECRET_ACCESS_KEY": "", "WORKSPACE": "test_workspace",
-    "endpoint_url" : "s3://test-endpoint",
-    "AWS_REGION" : "test_region",
-    "AWS_S3_ENDPOINT" : "s3://test-endpoint/path",
-    "WORKSPACE_DOMAIN" : "test.workspace.domain.com"},
+    {
+        "AWS_ACCESS_KEY_ID": "",
+        "AWS_SECRET_ACCESS_KEY": "",
+        "WORKSPACE": "test_workspace",
+        "endpoint_url": "s3://test-endpoint",
+        "AWS_REGION": "test_region",
+        "AWS_S3_ENDPOINT": "s3://test-endpoint/path",
+        "WORKSPACE_DOMAIN": "test.workspace.domain.com",
+    },
 )
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
@@ -826,6 +867,7 @@ def test_main_no_access_point(
     mock_send_to_ingester,
     mock_get_aws_client,
 ):
+    """Test main function with AWS credentials"""
 
     # Configure test variables
     collection_id = "test_collection"
@@ -885,7 +927,13 @@ def test_main_no_access_point(
         license="proprietary",
     )
 
-    expected_s3_data = {"s3_endpoint": bucket, "subfolder": subfolder, "workspace": "test_workspace", "workspace_domain": "test.workspace.domain.com", "bucket": bucket}
+    expected_s3_data = {
+        "s3_endpoint": bucket,
+        "subfolder": subfolder,
+        "workspace": "test_workspace",
+        "workspace_domain": "test.workspace.domain.com",
+        "bucket": bucket,
+    }
 
     mock_construct_collection_and_upload_assets.assert_called_once_with(
         mock_catalog,
