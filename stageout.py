@@ -21,12 +21,12 @@ class CustomStacIO(DefaultStacIO):
     def __init__(self, s3_endpoint=None):
         self.session = botocore.session.Session()
         self.s3_endpoint = s3_endpoint
-        if os.environ["AWS_ACCESS_KEY_ID"] and os.environ["AWS_SECRET_ACCESS_KEY"]:
+        if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
             self.s3_client = self.session.create_client(
                 service_name="s3",
                 use_ssl=True,
-                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
                 endpoint_url=os.environ["AWS_S3_ENDPOINT"],
                 region_name=os.environ["AWS_REGION"],
             )
@@ -46,15 +46,13 @@ class CustomStacIO(DefaultStacIO):
             super().write_text(dest, txt, *args, **kwargs)
 
 
-def get_aws_client(
-    aws_access_key_id: str, aws_secret_access_key: str, endpoint_url: str, region_name: str
-) -> boto3.client:
+def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
     # Configure AWS client
-    if aws_access_key_id and aws_secret_access_key:
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         s3_client = boto3.client(
             "s3",
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
             endpoint_url=endpoint_url,
             region_name=region_name,
         )
@@ -231,7 +229,7 @@ def main(
     # Create new collection id
     collection_id = f"col_{collection_id}"
 
-    s3_client = get_aws_client(aws_access_key_id, aws_secret_access_key, endpoint_url, region_name)
+    s3_client = get_aws_client(endpoint_url, region_name)
 
     workspace = os.environ["WORKSPACE"]
 
@@ -245,6 +243,7 @@ def main(
     def custom_stac_io_factory(s3_endpoint):
         def create_custom_stac_io():
             return CustomStacIO(s3_endpoint=s3_endpoint)
+
         return create_custom_stac_io
 
     StacIO.set_default(custom_stac_io_factory(s3_endpoint))
@@ -335,20 +334,11 @@ if __name__ == "__main__":
     s3_endpoint = bucket
     workspace_domain = os.environ["WORKSPACE_DOMAIN"]
 
-    aws_access_key_id = None
-    aws_secret_access_key = None
-
-    if os.environ["AWS_ACCESS_KEY_ID"] and os.environ["AWS_SECRET_ACCESS_KEY"]:
-        aws_access_key_id = os.environ["AWS_ACCESS_KEY_ID"]
-        aws_secret_access_key = os.environ["AWS_SECRET_ACCESS_KEY"]
-
     main(
         collection_id,
         cat_url,
         bucket,
         subfolder,
-        aws_access_key_id,
-        aws_secret_access_key,
         endpoint_url,
         region_name,
         s3_endpoint,
