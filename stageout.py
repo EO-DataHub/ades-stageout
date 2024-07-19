@@ -134,9 +134,9 @@ def construct_collection_and_upload_assets(
     cat_id: str,
     collection_id: str,
     s3_client: boto3.client,
-    s3_data: dict
+    s3_data: dict,
 ) -> pystac.Collection:
-    
+
     s3_endpoint = s3_data["s3_endpoint"]
     subfolder = s3_data["subfolder"]
     workspace = s3_data["workspace"]
@@ -276,16 +276,16 @@ def main(
         if link.rel == "root":
             cat.links.pop(index)  # remove root link
 
-    s3_data = {"s3_endpoint": s3_endpoint, "subfolder": subfolder, "workspace": workspace, "workspace_domain": workspace_domain, "bucket": bucket}
-    
+    s3_data = {
+        "s3_endpoint": s3_endpoint,
+        "subfolder": subfolder,
+        "workspace": workspace,
+        "workspace_domain": workspace_domain,
+        "bucket": bucket,
+    }
 
     collection = construct_collection_and_upload_assets(
-        cat,
-        collection,
-        cat_id,
-        collection_id,
-        s3_client,
-        s3_data
+        cat, collection, cat_id, collection_id, s3_client, s3_data
     )
 
     collection.update_extent_from_items()
