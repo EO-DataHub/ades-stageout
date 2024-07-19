@@ -85,7 +85,7 @@ def get_current_namespace():
         return "default"
 
 
-def get_bucket_from_workspace() -> str:
+def get_bucket_from_namespace() -> str:
     # Load the kubernetes config
     config.load_incluster_config()
 
@@ -236,7 +236,7 @@ def main(
     workspace = os.environ["WORKSPACE"]
 
     # Identify access point
-    access_point = get_bucket_from_workspace()
+    access_point = get_bucket_from_namespace()
     if access_point:
         subfolder = os.path.join(workspace, subfolder)
         s3_endpoint = access_point
