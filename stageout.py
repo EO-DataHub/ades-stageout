@@ -211,13 +211,12 @@ def main(
     cat_url,
     bucket,
     subfolder,
-    aws_access_key_id,
-    aws_secret_access_key,
-    endpoint_url,
-    region_name,
-    s3_endpoint,
-    workspace_domain,
 ):
+
+    region_name = os.environ["AWS_REGION"]
+    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
+    s3_endpoint = bucket
+    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
 
     shutil.copytree(cat_url, "/tmp/catalog")
     cat = pystac.read_file(os.path.join("/tmp/catalog", "catalog.json"))
@@ -329,18 +328,4 @@ if __name__ == "__main__":
     subfolder = sys.argv[3]
     collection_id = sys.argv[4]
 
-    region_name = os.environ["AWS_REGION"]
-    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
-    s3_endpoint = bucket
-    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
-
-    main(
-        collection_id,
-        cat_url,
-        bucket,
-        subfolder,
-        endpoint_url,
-        region_name,
-        s3_endpoint,
-        workspace_domain,
-    )
+    main(collection_id, cat_url, bucket, subfolder)
