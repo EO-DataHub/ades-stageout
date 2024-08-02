@@ -4,9 +4,9 @@
 #
 #    pip-compile
 #
-boto3==1.34.149
+boto3==1.34.152
     # via eodhp-ades-stageout (pyproject.toml)
-botocore==1.34.149
+botocore==1.34.152
     # via
     #   boto3
     #   eodhp-ades-stageout (pyproject.toml)
