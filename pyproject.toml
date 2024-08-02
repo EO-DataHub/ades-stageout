@@ -64,11 +64,11 @@ classifiers = [
 # For an analysis of this field vs pip's requirements files see:
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
 dependencies = [
-    "kubernetes",
-    "pulsar-client",
-    "pystac",
-    "boto3",
-    "botocore"
+    "kubernetes==30.1.0",
+    "pulsar-client==3.5.0",
+    "pystac==1.10.1",
+    "boto3==1.34.143",
+    "botocore==1.34.143"
 ]
 
 # List additional groups of dependencies here (e.g. development
