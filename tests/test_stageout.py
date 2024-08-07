@@ -733,11 +733,19 @@ def test_main_access_point(
     mock_pystac_read_file.return_value = mock_catalog
     mock_pystac_write_file.return_value = None
 
+    mock_item_1 = mock.Mock()
+    mock_item_1.id = "test_item_1"
+    mock_item_1.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset1")}
+    mock_item_2 = mock.Mock()
+    mock_item_2.id = "test_item_2"
+    mock_item_2.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset2")}
+
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
     mock_collection.get_self_href.return_value = (
         f"s3://eodhp-dev-workspaces/{subfolder}/cat_{collection_id}/{collection_id}.json"
     )
+    mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_pystac_Collection.return_value = mock_collection
 
     mock_pystac_Extent.return_value = "some-extent"
@@ -788,7 +796,7 @@ def test_main_access_point(
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/test_collection.json"
+        "dest_href": f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/collection.json"
     }
     assert calls[1][0][0] == mock_catalog
     assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{collection_id}.json"}
@@ -800,7 +808,7 @@ def test_main_access_point(
         [
             "test_item_1",
             "test_item_2",
-            f"test_workspace/{subfolder}/cat_{collection_id}/{collection_id}.json",
+            f"test_workspace/{subfolder}/cat_{collection_id}/collection.json",
             f"path/to/catalog/cat_{collection_id}.json",
         ],
         bucket,
@@ -892,11 +900,19 @@ def test_main_no_access_point(
     mock_pystac_read_file.return_value = mock_catalog
     mock_pystac_write_file.return_value = None
 
+    mock_item_1 = mock.Mock()
+    mock_item_1.id = "test_item_1"
+    mock_item_1.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset1")}
+    mock_item_2 = mock.Mock()
+    mock_item_2.id = "test_item_2"
+    mock_item_2.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset2")}
+
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
     mock_collection.get_self_href.return_value = (
         f"s3://{bucket}/{subfolder}/cat_{collection_id}/{collection_id}.json"
     )
+    mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_pystac_Collection.return_value = mock_collection
 
     mock_pystac_Extent.return_value = "some-extent"
@@ -946,7 +962,7 @@ def test_main_no_access_point(
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"s3://{bucket}/{subfolder}/cat_{collection_id}/test_collection.json"
+        "dest_href": f"s3://{bucket}/{subfolder}/cat_{collection_id}/collection.json"
     }
     assert calls[1][0][0] == mock_catalog
     assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{collection_id}.json"}
@@ -958,7 +974,7 @@ def test_main_no_access_point(
         [
             "test_item_1",
             "test_item_2",
-            f"{subfolder}/cat_{collection_id}/{collection_id}.json",
+            f"{subfolder}/cat_{collection_id}/collection.json",
             f"path/to/catalog/cat_{collection_id}.json",
         ],
         "test_bucket",

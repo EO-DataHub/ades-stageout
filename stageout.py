@@ -296,19 +296,23 @@ def main(
 
     cat.normalize_hrefs(f"s3://{bucket}/{subfolder}")
 
+    # Set hrefs after normalization
+    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
+    cat.set_self_href(cat_href)
+    collection_href = f"s3://{bucket}/{subfolder}/{cat_id}/collection.json"
+    collection.set_self_href(collection_href)
+    for item in collection.get_items():
+        item_href = f"s3://{bucket}/{subfolder}/{cat_id}/{collection_id}/{item.id}.json"
+        item.set_self_href(item_href)
+
     files_for_harvesting = upload_items(collection, cat_id, collection_id, bucket, subfolder)
 
     # upload collection to S3
-    s3_path = "s3://" + os.path.normpath(
-        os.path.join(bucket, subfolder, cat_id, os.path.basename(collection.get_self_href()))
-    )
-    print(f"upload collection.json to {s3_path}", file=sys.stderr)
-    pystac.write_file(collection, dest_href=s3_path)
-    files_for_harvesting.append(s3_path.replace(f"s3://{bucket}/", "", 1))
+    print(f"upload collection.json to {collection_href}", file=sys.stderr)
+    pystac.write_file(collection, dest_href=collection_href)
+    files_for_harvesting.append(collection_href.replace(f"s3://{bucket}/", "", 1))
 
     # upload catalog to S3
-    # Rename catalog to use catalog id
-    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
     print(f"upload catalog.json to {cat_href}", file=sys.stderr)
     pystac.write_file(cat, dest_href=cat_href)
     files_for_harvesting.append(cat_href.replace(f"s3://{bucket}/", "", 1))
