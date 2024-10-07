@@ -327,43 +327,24 @@ def main(
     cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
     cat.set_self_href(cat_href)
 
-    # upload collection to S3
-    collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}/{cat_id}/collection.json"
-    collection.set_self_href(collection_href)
-    print(f"upload collection.json to {collection_href}", file=sys.stderr)
-    print(collection.links, file=sys.stderr)
-    pystac.write_file(collection, dest_href=collection_href)
-
     for item in collection.get_items():
         item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}/{cat_id}/{collection_id}/{item.id}.json"
         item.set_self_href(item_href)
 
-    cat.normalize_hrefs(f"s3://{bucket}/{subfolder}")
-
-    # Set hrefs after normalization
-    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
-    cat.set_self_href(cat_href)
-
-    print("catalog links")
-    print(cat.links, file=sys.stderr)
-
-    collection_href = f"s3://{bucket}/{subfolder}/{cat_id}/collection.json"
-    print("catalog links")
-    print(cat.links, file=sys.stderr)
+    # upload collection to S3
+    collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}/{cat_id}/collection.json"
     collection.set_self_href(collection_href)
+    print(f"upload collection.json to {collection_href}", file=sys.stderr)
+    pystac.write_file(collection, dest_href=collection_href)
 
     # upload catalog to S3
     print(f"upload catalog.json to {cat_href}", file=sys.stderr)
     pystac.write_file(cat, dest_href=cat_href)
 
-    # collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}/{cat_id}/collection.json"
-    # collection.set_self_href(collection_href)
-
     files_for_harvesting = upload_items(collection, cat_id, collection_id, bucket, subfolder)
-
-    files_for_harvesting.append(cat_href.replace(f"s3://{bucket}/", "", 1))
-
-    files_for_harvesting.append(collection_href.replace(f"s3://{bucket}/", "", 1))
+    files_for_harvesting.append(f"{subfolder}/{cat_id}.json")
+    files_for_harvesting.append(f"{subfolder}/{cat_id}/collection.json")
+    print("Files for harvesting", files_for_harvesting, file=sys.stderr)
 
     send_to_ingester(files_for_harvesting, bucket, workspace)
 
