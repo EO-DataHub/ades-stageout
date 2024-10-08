@@ -150,6 +150,57 @@ def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_sta
         "AWS_SECRET_ACCESS_KEY": "",
     },
 )
+@patch("pystac.stac_io.DefaultStacIO")
+@patch("botocore.session.Session")
+@patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
+def test_custom_stac_write_text_workspace_url(mock_botocore_session_class, mock_default_stacio):
+
+    # Create mocks
+    mock_botocore_session = mock.Mock()
+    mock_botocore_session_client = mock.Mock()
+    mock_botocore_session_client.put_object.return_value = None
+    mock_botocore_session.create_client.return_value = mock_botocore_session_client
+    mock_botocore_session_class.return_value = mock_botocore_session
+    mock_default_stacio.write_text.return_value = None
+
+    # Configure expected arguments
+    expected_args = {
+        "Body": "test_text".encode("UTF-8"),
+        "Bucket": "bucket",
+        "Key": "workspace/test_dest/path",
+        "ContentType": "application/geo+json",
+    }
+
+    # Instantiate CustomStacIO
+    test_stac_io = CustomStacIO(
+        s3_endpoint="bucket", workspace="workspace", workspace_domain="domain.com"
+    )
+
+    # Test write_text
+    test_stac_io.write_text(
+        "https://workspace.domain.com/files/bucket/test_dest/path",
+        "test_text",
+        "args_1",
+        "arg_2",
+        kwarg_1="kwarg_1",
+        kwarg_2="kwarg_2",
+    )
+
+    # Assertions
+    assert mock_botocore_session_client.put_object.call_count == 1
+    mock_botocore_session_client.put_object.assert_called_once_with(**expected_args)
+
+
+@patch.dict(
+    os.environ,
+    {
+        "AWS_REGION": "mock_region",
+        "AWS_S3_ENDPOINT": "mock_endpoint",
+        "WORKSPACE_DOMAIN": "mock_domain",
+        "AWS_ACCESS_KEY_ID": "",
+        "AWS_SECRET_ACCESS_KEY": "",
+    },
+)
 @patch("pystac.stac_io.DefaultStacIO.write_text")
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
@@ -384,22 +435,22 @@ def test_construct_collection_and_upload_assets():
     assert calls[0][0] == (
         "/path/to/asset/test_1_href_1",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_1_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_1",
     )
     assert calls[1][0] == (
         "/path/to/asset/test_1_href_2",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_1_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_2",
     )
     assert calls[2][0] == (
         "/path/to/asset/test_2_href_1",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_2_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_1",
     )
     assert calls[3][0] == (
         "/path/to/asset/test_2_href_2",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_2_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_2",
     )
 
     # Check update href function
@@ -497,25 +548,25 @@ def test_construct_collection_and_upload_assets_directory(mock_upload_directory)
         mock_s3_client,
         "/path/to/asset/test_1_href_1",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_1_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_1",
     )
     assert calls[1][0] == (
         mock_s3_client,
         "/path/to/asset/test_1_href_2",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_1_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_2",
     )
     assert calls[2][0] == (
         mock_s3_client,
         "/path/to/asset/test_2_href_1",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_2_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_1",
     )
     assert calls[3][0] == (
         mock_s3_client,
         "/path/to/asset/test_2_href_2",
         s3_endpoint,
-        f"{subfolder}/{cat_id}/{collection_id}/test_2_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_2",
     )
 
     # Check output result
@@ -606,14 +657,15 @@ def test_upload_items(mock_pystac_write_file):
     collection_id = "test_collection"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
+    workspace = "test_workspace"
 
-    result = upload_items(mock_collection, cat_id, collection_id, bucket, subfolder)
+    result = upload_items(mock_collection, cat_id, collection_id, bucket, workspace, subfolder)
 
     # Check result is not empty
     assert result
     assert result == [
-        f"{subfolder}/{cat_id}/{collection_id}/test_item_1_href",
-        f"{subfolder}/{cat_id}/{collection_id}/test_item_2_href",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_item_1_href",
+        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_item_2_href",
     ]
 
     # Check calls are as expected
@@ -621,7 +673,7 @@ def test_upload_items(mock_pystac_write_file):
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_item_1
     assert calls[0][1] == {
-        "dest_href": f"s3://{bucket}/{subfolder}/{cat_id}/{collection_id}/test_item_1_href"
+        "dest_href": f"s3://{bucket}/{workspace}/{subfolder}/{cat_id}/{collection_id}/test_item_1_href"
     }
 
 
@@ -715,6 +767,8 @@ def test_main_access_point(
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
+    workspace = "test_workspace"
+    workspace_domain = "test.workspace.domain.com"
 
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
@@ -726,7 +780,9 @@ def test_main_access_point(
     mock_catalog.clear_items.return_value = None
     mock_catalog.add_child.return_value = None
     mock_catalog.normalize_hrefs.return_value = None
-    mock_catalog.get_self_href.return_value = "path/to/catalog/catalog.json"
+    mock_catalog.get_self_href.return_value = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
+    )
 
     mock_shutil_copytree.return_value = None
 
@@ -763,15 +819,13 @@ def test_main_access_point(
     assert mock_collection.update_extent_from_items.call_count == 1
     assert mock_catalog.clear_items.call_count == 1
     mock_catalog.add_child.assert_called_once_with(mock_collection)
-    mock_catalog.normalize_hrefs.assert_called_once_with(
-        f"s3://{bucket}/test_workspace/{subfolder}"
-    )
+    mock_catalog.normalize_hrefs.assert_called_once()
     mock_pystac_Collection.assert_called_once_with(
         id=f"col_{collection_id}",
         description="description",
         extent="some-extent",
         title="Result Collection",
-        href=f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/col_{collection_id}.json",
+        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{collection_id}/collection.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -779,7 +833,7 @@ def test_main_access_point(
 
     expected_s3_data = {
         "s3_endpoint": "test-access-point/test-bucket",
-        "subfolder": f"test_workspace/{subfolder}",
+        "subfolder": subfolder,
         "workspace": "test_workspace",
         "workspace_domain": "test.workspace.domain.com",
         "bucket": bucket,
@@ -796,10 +850,12 @@ def test_main_access_point(
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/collection.json"
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{collection_id}/collection.json"
     }
     assert calls[1][0][0] == mock_catalog
-    assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{collection_id}.json"}
+    assert calls[1][1] == {
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{collection_id}.json"
+    }
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
 
@@ -808,8 +864,8 @@ def test_main_access_point(
         [
             "test_item_1",
             "test_item_2",
-            f"test_workspace/{subfolder}/cat_{collection_id}/collection.json",
-            f"path/to/catalog/cat_{collection_id}.json",
+            f"{workspace}/{subfolder}/cat_{collection_id}.json",
+            f"{workspace}/{subfolder}/cat_{collection_id}/collection.json",
         ],
         bucket,
         "test_workspace",
@@ -882,6 +938,8 @@ def test_main_no_access_point(
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
+    workspace = "test_workspace"
+    workspace_domain = "test.workspace.domain.com"
 
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
@@ -893,7 +951,9 @@ def test_main_no_access_point(
     mock_catalog.clear_items.return_value = None
     mock_catalog.add_child.return_value = None
     mock_catalog.normalize_hrefs.return_value = None
-    mock_catalog.get_self_href.return_value = "path/to/catalog/catalog.json"
+    mock_catalog.get_self_href.return_value = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
+    )
 
     mock_shutil_copytree.return_value = None
 
@@ -931,13 +991,13 @@ def test_main_no_access_point(
     assert mock_collection.update_extent_from_items.call_count == 1
     assert mock_catalog.clear_items.call_count == 1
     mock_catalog.add_child.assert_called_once_with(mock_collection)
-    mock_catalog.normalize_hrefs.assert_called_once_with(f"s3://{bucket}/{subfolder}")
+    mock_catalog.normalize_hrefs.assert_called_once()
     mock_pystac_Collection.assert_called_once_with(
         id=f"col_{collection_id}",
         description="description",
         extent="some-extent",
         title="Result Collection",
-        href=f"s3://{bucket}/{subfolder}/cat_{collection_id}/col_{collection_id}.json",
+        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{collection_id}/collection.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -962,10 +1022,12 @@ def test_main_no_access_point(
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"s3://{bucket}/{subfolder}/cat_{collection_id}/collection.json"
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{collection_id}/collection.json"
     }
     assert calls[1][0][0] == mock_catalog
-    assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{collection_id}.json"}
+    assert calls[1][1] == {
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{collection_id}.json"
+    }
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
 
@@ -974,8 +1036,8 @@ def test_main_no_access_point(
         [
             "test_item_1",
             "test_item_2",
-            f"{subfolder}/cat_{collection_id}/collection.json",
-            f"path/to/catalog/cat_{collection_id}.json",
+            f"{workspace}/{subfolder}/cat_{collection_id}.json",
+            f"{workspace}/{subfolder}/cat_{collection_id}/collection.json",
         ],
         "test_bucket",
         "test_workspace",

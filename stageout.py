@@ -37,32 +37,34 @@ class CustomStacIO(DefaultStacIO):
 
     def write_text(self, dest, txt, *args, **kwargs):
         parsed = urlparse(dest)
-        print("parsed scheme", parsed.scheme, file=sys.stderr)
+        print(f"Writing to {dest}", file=sys.stderr)
+        # Construct expected workspace domain path
+        expected_workspace_url = f"{self.workspace}.{self.workspace_domain}"
         if parsed.scheme == "s3":
-            print(txt, file=sys.stderr)
+            # Output location is an S3 bucket - write directly to S3
+            key = parsed.path[1:]
+            print(f"Uploading to {key} at self.s3_endpoint", file=sys.stderr)
             self.s3_client.put_object(
                 Body=txt.encode("UTF-8"),
                 Bucket=self.s3_endpoint,
-                Key=parsed.path[1:],
+                Key=key,
                 ContentType="application/geo+json",
             )
-        elif parsed.scheme == "https":
-            # Construct expected workspace domain path
-            expected_workspace_url = f"{self.workspace}.{self.workspace_domain}"
-            if parsed.netloc == expected_workspace_url:
-                key_suffix = parsed.path.split("/")[
-                    3:
-                ]  # split by "/" and take path after workspace domain
-                key_suffix = "/".join(key_suffix)
-                key = f"{self.workspace}/{key_suffix}"
-                print("New key is ", key, file=sys.stderr)
-                self.s3_client.put_object(
-                    Body=txt.encode("UTF-8"),
-                    Bucket=self.s3_endpoint,
-                    Key=key,
-                    ContentType="application/geo+json",
-                )
+        elif parsed.scheme == "https" and parsed.netloc == expected_workspace_url:
+            # Output location is a link to workspace store - write directly to S3
+            # Path is expected to be in the form of https://workspace.domain/files/bucket/key
+            key_suffix = parsed.path.split("/")[3:]
+            key_suffix = "/".join(key_suffix)
+            key = f"{self.workspace}/{key_suffix}"
+            print(f"Uploading to {key} at self.s3_endpoint", file=sys.stderr)
+            self.s3_client.put_object(
+                Body=txt.encode("UTF-8"),
+                Bucket=self.s3_endpoint,
+                Key=key,
+                ContentType="application/geo+json",
+            )
         else:
+            # Output location is not within the workspace - use default write_text
             super().write_text(dest, txt, *args, **kwargs)
 
 
@@ -171,7 +173,9 @@ def construct_collection_and_upload_assets(
 
         for key, asset in item.get_assets().items():
             s3_path = os.path.normpath(
-                os.path.join(subfolder, cat_id, collection_id, os.path.basename(asset.href))
+                os.path.join(
+                    workspace, subfolder, cat_id, collection_id, os.path.basename(asset.href)
+                )
             )
             print(
                 f"upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
@@ -208,6 +212,7 @@ def upload_items(
     cat_id: str,
     collection_id: str,
     bucket: str,
+    workspace: str,
     subfolder: str,
 ) -> List[str]:
     files_for_harvesting = []
@@ -216,6 +221,7 @@ def upload_items(
         s3_path = "s3://" + os.path.normpath(
             os.path.join(
                 bucket,
+                workspace,
                 subfolder,
                 cat_id,
                 collection_id,
@@ -258,7 +264,6 @@ def main(
     # Identify access point
     access_point = get_bucket_from_namespace()
     if access_point:
-        subfolder = os.path.join(workspace, subfolder)
         s3_endpoint = access_point
         print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
@@ -280,8 +285,6 @@ def main(
         datetime.strptime(f"{date}T23:59:59", "%Y-%m-%dT%H:%M:%S"),
     ]
 
-    subfolder_no_workspace = subfolder.replace(f"{workspace}/", "", 1)
-
     collection = pystac.Collection(
         id=collection_id,
         description="description",
@@ -290,7 +293,7 @@ def main(
             temporal=pystac.TemporalExtent(intervals=[[min(dates), max(dates)]]),
         ),
         title="Result Collection",
-        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}/{cat_id}/collection.json",
+        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/collection.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -321,31 +324,29 @@ def main(
     print(cat.links, file=sys.stderr)
 
     # Set hrefs after normalization
-    cat.normalize_hrefs(
-        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}"
-    )
+    cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
     cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
     cat.set_self_href(cat_href)
 
     for item in collection.get_items():
-        item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}/{cat_id}/{collection_id}/{item.id}.json"
+        item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/{item.id}.json"
         item.set_self_href(item_href)
 
-    # upload collection to S3
-    collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder_no_workspace}/{cat_id}/collection.json"
+    # Upload collection to S3
+    collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/collection.json"
     collection.set_self_href(collection_href)
-    print(f"upload collection.json to {collection_href}", file=sys.stderr)
+    print(f"Upload collection.json to {collection_href}", file=sys.stderr)
     pystac.write_file(collection, dest_href=collection_href)
 
-    # upload catalog to S3
-    print(f"upload catalog.json to {cat_href}", file=sys.stderr)
+    # Upload catalog to S3
+    print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
     pystac.write_file(cat, dest_href=cat_href)
 
-    files_for_harvesting = upload_items(collection, cat_id, collection_id, bucket, subfolder)
-    files_for_harvesting.append(f"{subfolder}/{cat_id}.json")
-    files_for_harvesting.append(f"{subfolder}/{cat_id}/collection.json")
-    print("Files for harvesting", files_for_harvesting, file=sys.stderr)
-
+    files_for_harvesting = upload_items(
+        collection, cat_id, collection_id, bucket, workspace, subfolder
+    )
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
     send_to_ingester(files_for_harvesting, bucket, workspace)
 
     print(
