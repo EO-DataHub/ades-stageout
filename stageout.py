@@ -320,8 +320,6 @@ def main(
     cat.clear_items()
 
     cat.add_child(collection)
-    print("catalog links")
-    print(cat.links, file=sys.stderr)
 
     # Set hrefs after normalization
     cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
