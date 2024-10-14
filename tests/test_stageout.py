@@ -711,7 +711,8 @@ def test_main_access_point(
     """Test main function with no AWS credentials, instead using access point"""
 
     # Configure test variables
-    collection_id = "test_collection"
+    job_id = "12345678"
+    collection_id = f"col_{job_id}"
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
@@ -743,7 +744,7 @@ def test_main_access_point(
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
     mock_collection.get_self_href.return_value = (
-        f"s3://eodhp-dev-workspaces/{subfolder}/cat_{collection_id}/{collection_id}.json"
+        f"s3://eodhp-dev-workspaces/{subfolder}/cat_{job_id}/{collection_id}.json"
     )
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_pystac_Collection.return_value = mock_collection
@@ -757,7 +758,7 @@ def test_main_access_point(
 
     mock_send_to_ingester.return_value = None
 
-    main(collection_id, cat_url, bucket, subfolder)
+    main(job_id, cat_url, bucket, subfolder)
 
     # Check calls are as expected
     assert mock_collection.update_extent_from_items.call_count == 1
@@ -767,11 +768,11 @@ def test_main_access_point(
         f"s3://{bucket}/test_workspace/{subfolder}"
     )
     mock_pystac_Collection.assert_called_once_with(
-        id=f"col_{collection_id}",
+        id=collection_id,
         description="description",
         extent="some-extent",
-        title="Result Collection",
-        href=f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/col_{collection_id}.json",
+        title=f"Result Collection for Job {job_id}",
+        href=f"s3://{bucket}/test_workspace/{subfolder}/cat_{job_id}/{collection_id}.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -788,18 +789,18 @@ def test_main_access_point(
     mock_construct_collection_and_upload_assets.assert_called_once_with(
         mock_catalog,
         mock_collection,
-        f"cat_{collection_id}",
-        f"col_{collection_id}",
+        f"cat_{job_id}",
+        collection_id,
         mock_boto3_client_instance,
         expected_s3_data,
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"s3://{bucket}/test_workspace/{subfolder}/cat_{collection_id}/collection.json"
+        "dest_href": f"s3://{bucket}/test_workspace/{subfolder}/cat_{job_id}/collection.json"
     }
     assert calls[1][0][0] == mock_catalog
-    assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{collection_id}.json"}
+    assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{job_id}.json"}
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
 
@@ -808,8 +809,8 @@ def test_main_access_point(
         [
             "test_item_1",
             "test_item_2",
-            f"test_workspace/{subfolder}/cat_{collection_id}/collection.json",
-            f"path/to/catalog/cat_{collection_id}.json",
+            f"test_workspace/{subfolder}/cat_{job_id}/collection.json",
+            f"path/to/catalog/cat_{job_id}.json",
         ],
         bucket,
         "test_workspace",
@@ -878,7 +879,8 @@ def test_main_no_access_point(
     """Test main function with AWS credentials"""
 
     # Configure test variables
-    collection_id = "test_collection"
+    job_id = "12345678"
+    collection_id = f"col_{job_id}"
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
@@ -925,7 +927,7 @@ def test_main_no_access_point(
 
     mock_send_to_ingester.return_value = None
 
-    main(collection_id, cat_url, bucket, subfolder)
+    main(job_id, cat_url, bucket, subfolder)
 
     # Check calls are as expected
     assert mock_collection.update_extent_from_items.call_count == 1
@@ -933,11 +935,11 @@ def test_main_no_access_point(
     mock_catalog.add_child.assert_called_once_with(mock_collection)
     mock_catalog.normalize_hrefs.assert_called_once_with(f"s3://{bucket}/{subfolder}")
     mock_pystac_Collection.assert_called_once_with(
-        id=f"col_{collection_id}",
+        id=collection_id,
         description="description",
         extent="some-extent",
-        title="Result Collection",
-        href=f"s3://{bucket}/{subfolder}/cat_{collection_id}/col_{collection_id}.json",
+        title=f"Result Collection for Job {job_id}",
+        href=f"s3://{bucket}/{subfolder}/cat_{job_id}/{collection_id}.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -954,18 +956,16 @@ def test_main_no_access_point(
     mock_construct_collection_and_upload_assets.assert_called_once_with(
         mock_catalog,
         mock_collection,
-        f"cat_{collection_id}",
-        f"col_{collection_id}",
+        f"cat_{job_id}",
+        collection_id,
         mock_boto3_client_instance,
         expected_s3_data,
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
-    assert calls[0][1] == {
-        "dest_href": f"s3://{bucket}/{subfolder}/cat_{collection_id}/collection.json"
-    }
+    assert calls[0][1] == {"dest_href": f"s3://{bucket}/{subfolder}/cat_{job_id}/collection.json"}
     assert calls[1][0][0] == mock_catalog
-    assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{collection_id}.json"}
+    assert calls[1][1] == {"dest_href": f"path/to/catalog/cat_{job_id}.json"}
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
 
@@ -974,8 +974,8 @@ def test_main_no_access_point(
         [
             "test_item_1",
             "test_item_2",
-            f"{subfolder}/cat_{collection_id}/collection.json",
-            f"path/to/catalog/cat_{collection_id}.json",
+            f"{subfolder}/cat_{job_id}/collection.json",
+            f"path/to/catalog/cat_{job_id}.json",
         ],
         "test_bucket",
         "test_workspace",
