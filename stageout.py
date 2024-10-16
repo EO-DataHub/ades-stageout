@@ -236,7 +236,7 @@ def upload_items(
 
 
 def main(
-    collection_id,
+    job_id,
     cat_url,
     bucket,
     subfolder,
@@ -251,11 +251,11 @@ def main(
     cat = pystac.read_file(os.path.join("/tmp/catalog", "catalog.json"))
 
     # Create new catalog id
-    cat.id = f"cat_{collection_id}"
+    cat.id = f"cat_{job_id}"
     cat_id = cat.id
 
     # Create new collection id
-    collection_id = f"col_{collection_id}"
+    collection_id = f"col_{job_id}"
 
     s3_client = get_aws_client(endpoint_url, region_name)
 
@@ -292,7 +292,7 @@ def main(
             spatial=pystac.SpatialExtent([[-180, -90, 180, 90]]),
             temporal=pystac.TemporalExtent(intervals=[[min(dates), max(dates)]]),
         ),
-        title="Result Collection",
+        title=f"Result Collection for Job {job_id}",
         href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/collection.json",
         stac_extensions=[],
         keywords=["eoepca"],
@@ -356,13 +356,13 @@ def main(
 if __name__ == "__main__":
     if len(sys.argv) != 5:
         print(
-            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <collection_id>",
+            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id>",
             file=sys.stderr,
         )
         sys.exit(1)
     cat_url = sys.argv[1]
     bucket = sys.argv[2]
     subfolder = sys.argv[3]
-    collection_id = sys.argv[4]
+    job_id = sys.argv[4]
 
-    main(collection_id, cat_url, bucket, subfolder)
+    main(job_id, cat_url, bucket, subfolder)
