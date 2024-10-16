@@ -998,7 +998,7 @@ def test_main_no_access_point(
         id=collection_id,
         description="description",
         extent="some-extent",
-        title="Result Collection",
+        title=f"Result Collection for Job {job_id}",
         href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}/collection.json",
         stac_extensions=[],
         keywords=["eoepca"],
