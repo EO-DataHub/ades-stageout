@@ -234,7 +234,7 @@ def upload_items(
     return files_for_harvesting
 
 
-def handle_STAC_outputs(
+def handle_stac_outputs(
     s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
 ):
     """
@@ -443,7 +443,7 @@ def main(
         s3_endpoint = access_point
         print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
-    catalog_created = handle_STAC_outputs(
+    catalog_created = handle_stac_outputs(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
     )
 
