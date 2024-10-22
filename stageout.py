@@ -122,13 +122,12 @@ def get_bucket_from_namespace() -> str:
         print(f"Exception when fetching workspace bucket: {e}", file=sys.stderr)
 
 
-def send_to_ingester(harvest_list: List[str], bucket: str, workspace: str):
+def send_to_ingester(harvest_list: List[str], bucket: str, workspace: str, topic: str, name: str):
     pulsar_url = os.getenv("PULSAR_URL", "")
     pulsar_client = pulsar.Client(pulsar_url)
-    pulsar_topic = "harvested"
-    producer = pulsar_client.create_producer(topic=pulsar_topic, producer_name="ades-outputs")
+    producer = pulsar_client.create_producer(topic=topic, producer_name=name)
     message_dict = {
-        "id": f"ades-outputs/{workspace}",
+        "id": f"{name}/{workspace}",
         "workspace": workspace,
         "repository": "",
         "branch": "main",
@@ -235,20 +234,20 @@ def upload_items(
     return files_for_harvesting
 
 
-def main(
-    job_id,
-    cat_url,
-    bucket,
-    subfolder,
+def handle_STAC_outputs(
+    s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
 ):
-
-    region_name = os.environ["AWS_REGION"]
-    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
-    s3_endpoint = bucket
-    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
-
-    shutil.copytree(cat_url, "/tmp/catalog")
-    cat = pystac.read_file(os.path.join("/tmp/catalog", "catalog.json"))
+    """
+    Handle STAC outputs defined in the catalog.json file
+    """
+    try:
+        cat = pystac.read_file(os.path.join("/tmp/outputs", "catalog.json"))
+    except FileNotFoundError:
+        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        return False
+    except pystac.STACTypeError:
+        print("Failed to read STAC Catalog", file=sys.stderr)
+        return False
 
     # Create new catalog id
     cat.id = f"cat_{job_id}"
@@ -256,16 +255,6 @@ def main(
 
     # Create new collection id
     collection_id = f"col_{job_id}"
-
-    s3_client = get_aws_client(endpoint_url, region_name)
-
-    workspace = os.environ["WORKSPACE"]
-
-    # Identify access point
-    access_point = get_bucket_from_namespace()
-    if access_point:
-        s3_endpoint = access_point
-        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
     def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
         def create_custom_stac_io():
@@ -345,12 +334,126 @@ def main(
     )
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
-    send_to_ingester(files_for_harvesting, bucket, workspace)
+    send_to_ingester(files_for_harvesting, bucket, workspace, "harvested", "ades-outputs-stac")
 
     print(
         f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}.json",
         file=sys.stdout,
     )
+
+    return True
+
+
+def upload_annotation(s3_client, s3_endpoint, workspace, bucket, job_id, cat_id, file_name) -> bool:
+    try:
+        with open(os.path.join("/tmp/outputs", file_name), "r") as file:
+            try:
+                # Check if file is valid JSON
+                _ = json.load(file)
+            except json.JSONDecodeError:
+                print("Failed to read annotations.json, it is not valid JSON", file=sys.stderr)
+                print(file.read(), file=sys.stderr)
+                return False
+    except FileNotFoundError:
+        print(f"Failed to load annotations in {file_name}", file=sys.stderr)
+        return False
+
+    # Construct path for annotations in S3
+    s3_path = os.path.normpath(
+        os.path.join(
+            workspace, subfolder, cat_id, file_name
+        )  # save annotations at collection level
+    )
+
+    # Upload annotations to S3
+    print(f"Uploading annotations to {s3_path}", file=sys.stderr)
+    try:
+        s3_client.upload_file(
+            os.path.join("/tmp/outputs", file_name),
+            s3_endpoint,
+            s3_path,
+        )
+        print(f"Annotations in {file_name} uploaded successfully", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(
+            f"Failed to upload annotations in {file_name} to {s3_path}: {e}",
+            file=sys.stderr,
+        )
+        return False
+
+
+def handle_annotations(s3_client, s3_endpoint, workspace, bucket, job_id) -> bool:
+    """
+    Handle annotations defined in the annotations.json file
+    """
+
+    cat_id = f"cat_{job_id}"
+    added_annotations = []
+
+    # Identify all annotations files
+    for file_name in os.listdir("/tmp/outputs"):
+        if file_name.endswith("-annotations.json"):
+            if upload_annotation(
+                s3_client, s3_endpoint, workspace, bucket, job_id, cat_id, file_name
+            ):
+                added_annotations.append(file_name)
+
+    # Send annotations to ingester
+    if added_annotations:
+        print(
+            "Annotations found, sending to ingester",
+            file=sys.stdout,
+        )
+        send_to_ingester(
+            added_annotations,
+            bucket,
+            workspace,
+            "harvested-annotations",
+            "ades-outputs-annotations",
+        )
+        return True
+
+    return False
+
+
+def main(
+    cat_url,
+    bucket,
+    subfolder,
+    job_id,
+):
+
+    region_name = os.environ["AWS_REGION"]
+    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
+    s3_endpoint = bucket
+    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
+    workspace = os.environ["WORKSPACE"]
+
+    try:
+        shutil.copytree(cat_url, "/tmp/outputs")
+    except FileNotFoundError:
+        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        raise
+
+    # Create S3 client
+    s3_client = get_aws_client(endpoint_url, region_name)
+
+    # Identify access point
+    access_point = get_bucket_from_namespace()
+    if access_point:
+        s3_endpoint = access_point
+        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
+
+    catalog_created = handle_STAC_outputs(
+        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
+    )
+
+    annotations_created = handle_annotations(s3_client, s3_endpoint, workspace, bucket, job_id)
+
+    if not catalog_created and not annotations_created:
+        print("No outputs generated, stageout failed", file=sys.stderr)
+        raise
 
 
 if __name__ == "__main__":
@@ -365,4 +468,4 @@ if __name__ == "__main__":
     subfolder = sys.argv[3]
     job_id = sys.argv[4]
 
-    main(job_id, cat_url, bucket, subfolder)
+    main(cat_url, bucket, subfolder, job_id)
