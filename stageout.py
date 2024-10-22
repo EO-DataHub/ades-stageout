@@ -344,7 +344,7 @@ def handle_STAC_outputs(
     return True
 
 
-def upload_annotation(s3_client, s3_endpoint, workspace, bucket, job_id, cat_id, file_name) -> bool:
+def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name) -> bool:
     try:
         with open(os.path.join("/tmp/outputs", file_name), "r") as file:
             try:
@@ -383,7 +383,7 @@ def upload_annotation(s3_client, s3_endpoint, workspace, bucket, job_id, cat_id,
         return False
 
 
-def handle_annotations(s3_client, s3_endpoint, workspace, bucket, job_id) -> bool:
+def handle_annotations(s3_client, s3_endpoint, workspace, bucket, subfolder, job_id) -> bool:
     """
     Handle annotations defined in the annotations.json file
     """
@@ -394,10 +394,8 @@ def handle_annotations(s3_client, s3_endpoint, workspace, bucket, job_id) -> boo
     # Identify all annotations files
     for file_name in os.listdir("/tmp/outputs"):
         if file_name.endswith("-annotations.json"):
-            if upload_annotation(
-                s3_client, s3_endpoint, workspace, bucket, job_id, cat_id, file_name
-            ):
-                added_annotations.append(file_name)
+            if upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name):
+                added_annotations.append(f"{workspace}/{subfolder}/{cat_id}/{file_name}")
 
     # Send annotations to ingester
     if added_annotations:
@@ -449,7 +447,9 @@ def main(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
     )
 
-    annotations_created = handle_annotations(s3_client, s3_endpoint, workspace, bucket, job_id)
+    annotations_created = handle_annotations(
+        s3_client, s3_endpoint, workspace, bucket, subfolder, job_id
+    )
 
     if not catalog_created and not annotations_created:
         print("No outputs generated, stageout failed", file=sys.stderr)
