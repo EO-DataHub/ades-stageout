@@ -3,6 +3,7 @@ import os
 from unittest import mock
 from unittest.mock import mock_open, patch
 
+import pystac
 from kubernetes.client.rest import ApiException
 
 from stageout import (
@@ -12,6 +13,7 @@ from stageout import (
     get_bucket_from_namespace,
     get_current_namespace,
     handle_annotations,
+    handle_STAC_outputs,
     main,
     send_to_ingester,
     upload_annotation,
@@ -1190,3 +1192,106 @@ def test_handle_annotations_no_annotations(
     result = handle_annotations(s3_client, s3_endpoint, workspace, bucket, subfolder, job_id)
     assert not result
     assert mock_send_to_ingester.call_count == 0
+
+
+@patch("pystac.read_file")
+@patch("os.path.join")
+@patch("stageout.CustomStacIO")
+@patch("stageout.construct_collection_and_upload_assets")
+@patch("stageout.upload_items")
+@patch("stageout.send_to_ingester")
+@patch("pystac.write_file")
+def test_handle_STAC_outputs_success(
+    mock_write_file,
+    mock_send_to_ingester,
+    mock_upload_items,
+    mock_construct_collection,
+    mock_CustomStacIO,
+    mock_os_path_join,
+    mock_read_file,
+):
+    # Configure mocks
+    s3_client = mock.Mock()
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "job_id"
+
+    # Mock the pystac.read_file to return a mock catalog
+    mock_catalog = mock.Mock()
+    mock_catalog.id = "test_catalog"
+    mock_catalog.links = [Link("root", "test_root_href"), Link("self", "test_self_href")]
+    mock_catalog.clear_items.return_value = None
+    mock_catalog.add_child.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.get_self_href.return_value = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
+    )
+    mock_os_path_join.return_value = "/tmp/outputs/catalog.json"
+    mock_read_file.return_value = mock_catalog
+
+    # Mock the collection construction and upload
+    mock_collection = mock.Mock()
+    mock_item = mock.Mock()
+    mock_item.id = "item_id"
+    mock_item.set_self_href.return_value = None
+    mock_collection.get_items.return_value = [mock_item]
+    mock_construct_collection.return_value = mock_collection
+
+    # Mock the upload_items function
+    mock_upload_items.return_value = []
+
+    result = handle_STAC_outputs(
+        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
+    )
+    assert result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    mock_write_file.assert_any_call(
+        mock_collection,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}/collection.json",
+    )
+    mock_write_file.assert_any_call(
+        mock_catalog,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}.json",
+    )
+    mock_send_to_ingester.assert_called_once()
+
+
+@patch("pystac.read_file")
+def test_handle_STAC_outputs_file_not_found(mock_read_file):
+    s3_client = mock.Mock()
+    mock_read_file.side_effect = FileNotFoundError
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "job_id"
+
+    result = handle_STAC_outputs(
+        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
+    )
+    assert not result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+
+
+@patch("pystac.read_file")
+def test_handle_STAC_outputs_stac_type_error(mock_read_file):
+    s3_client = mock.Mock()
+    mock_read_file.side_effect = pystac.STACTypeError(
+        bad_dict={"id": "test"}, expected=pystac.Catalog
+    )
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "job_id"
+
+    result = handle_STAC_outputs(
+        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
+    )
+    assert not result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
