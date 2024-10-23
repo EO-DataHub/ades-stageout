@@ -13,7 +13,7 @@ from stageout import (
     get_bucket_from_namespace,
     get_current_namespace,
     handle_annotations,
-    handle_STAC_outputs,
+    handle_stac_outputs,
     main,
     send_to_ingester,
     upload_annotation,
@@ -1201,7 +1201,7 @@ def test_handle_annotations_no_annotations(
 @patch("stageout.upload_items")
 @patch("stageout.send_to_ingester")
 @patch("pystac.write_file")
-def test_handle_STAC_outputs_success(
+def test_handle_stac_outputs_success(
     mock_write_file,
     mock_send_to_ingester,
     mock_upload_items,
@@ -1243,7 +1243,7 @@ def test_handle_STAC_outputs_success(
     # Mock the upload_items function
     mock_upload_items.return_value = []
 
-    result = handle_STAC_outputs(
+    result = handle_stac_outputs(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
     )
     assert result
@@ -1260,7 +1260,7 @@ def test_handle_STAC_outputs_success(
 
 
 @patch("pystac.read_file")
-def test_handle_STAC_outputs_file_not_found(mock_read_file):
+def test_handle_stac_outputs_file_not_found(mock_read_file):
     s3_client = mock.Mock()
     mock_read_file.side_effect = FileNotFoundError
     s3_endpoint = "s3_endpoint"
@@ -1270,7 +1270,7 @@ def test_handle_STAC_outputs_file_not_found(mock_read_file):
     subfolder = "subfolder"
     job_id = "job_id"
 
-    result = handle_STAC_outputs(
+    result = handle_stac_outputs(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
     )
     assert not result
@@ -1278,7 +1278,7 @@ def test_handle_STAC_outputs_file_not_found(mock_read_file):
 
 
 @patch("pystac.read_file")
-def test_handle_STAC_outputs_stac_type_error(mock_read_file):
+def test_handle_stac_outputs_stac_type_error(mock_read_file):
     s3_client = mock.Mock()
     mock_read_file.side_effect = pystac.STACTypeError(
         bad_dict={"id": "test"}, expected=pystac.Catalog
@@ -1290,7 +1290,7 @@ def test_handle_STAC_outputs_stac_type_error(mock_read_file):
     subfolder = "subfolder"
     job_id = "job_id"
 
-    result = handle_STAC_outputs(
+    result = handle_stac_outputs(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
     )
     assert not result
