@@ -178,7 +178,7 @@ def construct_collection_and_upload_assets(
                 )
             )
             print(
-                f"upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
+                f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
                 file=sys.stderr,
             )
             try:
@@ -191,7 +191,7 @@ def construct_collection_and_upload_assets(
                 upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
             except Exception as e:
                 print(
-                    f"upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
+                    f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
                     file=sys.stderr,
                 )
 
@@ -201,7 +201,7 @@ def construct_collection_and_upload_assets(
                 s3_path = s3_path[len(prefix) :]
             # Replace href with workspace-accessible url
             asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
-            print(f"replacing item href with {asset.href}", file=sys.stderr)
+            print(f"Replacing item href with {asset.href}", file=sys.stderr)
             item.add_asset(key, asset)
 
     return collection
@@ -229,54 +229,24 @@ def upload_items(
             )
         )
         pystac.write_file(item, dest_href=s3_path)
-        print(f"upload {item.id} to {s3_path}", file=sys.stderr)
+        print(f"Upload {item.id} to {s3_path}", file=sys.stderr)
         files_for_harvesting.append(s3_path.replace(f"s3://{bucket}/", "", 1))
 
     return files_for_harvesting
 
 
-def main(
-    job_id,
-    cat_url,
+def generate_new_collection(
+    collection_id,
+    cat,
+    s3_client,
+    s3_endpoint,
+    workspace,
+    workspace_domain,
     bucket,
     subfolder,
+    cat_id,
+    job_id,
 ):
-
-    region_name = os.environ["AWS_REGION"]
-    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
-    s3_endpoint = bucket
-    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
-
-    shutil.copytree(cat_url, "/tmp/catalog")
-    cat = pystac.read_file(os.path.join("/tmp/catalog", "catalog.json"))
-
-    # Create new catalog id
-    cat.id = f"cat_{job_id}"
-    cat_id = cat.id
-
-    # Create new collection id
-    collection_id = f"col_{job_id}"
-
-    s3_client = get_aws_client(endpoint_url, region_name)
-
-    workspace = os.environ["WORKSPACE"]
-
-    # Identify access point
-    access_point = get_bucket_from_namespace()
-    if access_point:
-        s3_endpoint = access_point
-        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
-
-    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
-        def create_custom_stac_io():
-            return CustomStacIO(
-                s3_endpoint=s3_endpoint, workspace=workspace, workspace_domain=workspace_domain
-            )
-
-        return create_custom_stac_io
-
-    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
-
     # create a STAC collection for the process
     date = datetime.now().strftime("%Y-%m-%d")
 
@@ -345,12 +315,185 @@ def main(
     )
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
+    print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
     send_to_ingester(files_for_harvesting, bucket, workspace)
 
     print(
-        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}.json",
+        "Generated new collection and uploaded to S3",
         file=sys.stdout,
     )
+
+
+def handle_current_collection(
+    s3_client, s3_endpoint, cat, collections, cat_id, workspace_domain, bucket, workspace, subfolder
+):
+
+    files_for_harvesting = []
+
+    # Set hrefs after normalization
+    print(
+        f"Normalising Catalog hrefs to https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}",
+        file=sys.stderr,
+    )
+    cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
+
+    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
+    cat.set_self_href(cat_href)
+
+    cat.clear_children()
+
+    for index, link in enumerate(cat.links):
+        if link.rel == "root":
+            cat.links.pop(index)  # remove root link
+
+    for collection in collections:
+        collection.set_self_href(
+            f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
+        )
+        cat.add_child(collection)
+
+        items = collection.get_items()
+
+        for item in items:
+            for index, link in enumerate(item.links):
+                if link.rel == "root":
+                    item.links.pop(index)  # remove root link
+
+            item.set_collection(collection)
+
+            for key, asset in item.get_assets().items():
+                s3_path = os.path.normpath(
+                    os.path.join(
+                        workspace, subfolder, cat_id, collection.id, os.path.basename(asset.href)
+                    )
+                )
+                print(
+                    f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
+                    file=sys.stderr,
+                )
+                try:
+                    s3_client.upload_file(
+                        asset.get_absolute_href(),
+                        s3_endpoint,
+                        s3_path,
+                    )
+                except IsADirectoryError:
+                    upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
+                except Exception as e:
+                    print(
+                        f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
+                        file=sys.stderr,
+                    )
+
+                # Remove workspace name from s3_path
+                prefix = f"{workspace}/"
+                if s3_path.startswith(prefix):
+                    s3_path = s3_path[len(prefix) :]
+                # Replace href with workspace-accessible url
+                asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
+                print(f"Replacing item href with {asset.href}", file=sys.stderr)
+                item.add_asset(key, asset)
+            item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
+            item.set_self_href(item_href)
+
+        files_for_harvesting += upload_items(
+            collection, cat_id, collection.id, bucket, workspace, subfolder
+        )
+        # Upload collection to S3
+        collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
+        print(f"Upload {collection.id}.json to {collection_href}", file=sys.stderr)
+        pystac.write_file(collection, dest_href=collection_href)
+
+        files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection.id}.json")
+
+    # Upload catalog to S3
+    print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
+    pystac.write_file(cat, dest_href=cat_href)
+
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
+
+    print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
+
+    send_to_ingester(files_for_harvesting, bucket, workspace)
+
+    print("Uploaded existing collections to S3", file=sys.stdout)
+
+
+def main(
+    job_id,
+    cat_url,
+    bucket,
+    subfolder,
+):
+
+    region_name = os.environ["AWS_REGION"]
+    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
+    s3_endpoint = bucket
+    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
+    workspace = os.environ["WORKSPACE"]
+
+    s3_endpoint = bucket
+    try:
+        shutil.copytree(cat_url, "./tmp/catalog")
+    except Exception as e:
+        raise Exception("Failed to copy catalog to tmp directory") from e
+    cat = pystac.read_file(os.path.join("./tmp/catalog", "catalog.json"))
+
+    # Create new catalog id
+    cat.id = f"cat_{job_id}"
+    cat_id = cat.id
+
+    # Create new collection id
+    collection_id = f"col_{job_id}"
+
+    s3_client = get_aws_client(endpoint_url, region_name)
+
+    # Identify access point
+    access_point = get_bucket_from_namespace()
+    if access_point:
+        s3_endpoint = access_point
+        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
+
+    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
+        def create_custom_stac_io():
+            return CustomStacIO(
+                s3_endpoint=s3_endpoint, workspace=workspace, workspace_domain=workspace_domain
+            )
+
+        return create_custom_stac_io
+
+    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
+
+    # Only need to generate collection if one is not already present in the generated catalog
+    collections = list(cat.get_all_collections())
+    if not collections:
+        print("No Collections found, generating new collection", file=sys.stderr)
+        generate_new_collection(
+            collection_id,
+            cat,
+            s3_client,
+            s3_endpoint,
+            workspace,
+            workspace_domain,
+            bucket,
+            subfolder,
+            cat_id,
+            job_id,
+        )
+    else:
+        # Use collections already present in the catalog
+        print("Collections found, using existing collections", file=sys.stderr)
+        handle_current_collection(
+            s3_client,
+            s3_endpoint,
+            cat,
+            collections,
+            cat_id,
+            workspace_domain,
+            bucket,
+            workspace,
+            subfolder,
+        )
 
 
 if __name__ == "__main__":
