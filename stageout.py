@@ -122,7 +122,15 @@ def get_bucket_from_namespace() -> str:
         print(f"Exception when fetching workspace bucket: {e}", file=sys.stderr)
 
 
-def send_to_ingester(harvest_list: List[str], bucket: str, workspace: str, topic: str, name: str):
+def send_to_ingester(
+    harvest_list: List[str],
+    bucket: str,
+    workspace: str,
+    topic: str,
+    name: str,
+    job_id: str,
+    workflow_id: str,
+):
     pulsar_url = os.getenv("PULSAR_URL", "")
     pulsar_client = pulsar.Client(pulsar_url)
     producer = pulsar_client.create_producer(topic=topic, producer_name=name)
@@ -137,6 +145,8 @@ def send_to_ingester(harvest_list: List[str], bucket: str, workspace: str, topic
         "deleted_keys": [],
         "source": workspace,
         "target": f"user-datasets/{workspace}",
+        "job_id": job_id,
+        "workflow_id": workflow_id,
     }
     try:
         # send message
@@ -235,7 +245,7 @@ def upload_items(
 
 
 def handle_stac_outputs(
-    s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
+    s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
 ):
     """
     Handle STAC outputs defined in the catalog.json file
@@ -334,7 +344,15 @@ def handle_stac_outputs(
     )
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
-    send_to_ingester(files_for_harvesting, bucket, workspace, "harvested", "ades-outputs-stac")
+    send_to_ingester(
+        files_for_harvesting,
+        bucket,
+        workspace,
+        "harvested",
+        "ades-outputs-stac",
+        job_id,
+        workflow_id,
+    )
 
     print(
         f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}.json",
@@ -383,7 +401,9 @@ def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file
         return False
 
 
-def handle_annotations(s3_client, s3_endpoint, workspace, bucket, subfolder, job_id) -> bool:
+def handle_annotations(
+    s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, workflow_id
+) -> bool:
     """
     Handle annotations defined in the annotations.json file
     """
@@ -409,6 +429,8 @@ def handle_annotations(s3_client, s3_endpoint, workspace, bucket, subfolder, job
             workspace,
             "harvested-annotations",
             "ades-outputs-annotations",
+            job_id,
+            workflow_id,
         )
         return True
 
@@ -420,6 +442,7 @@ def main(
     bucket,
     subfolder,
     job_id,
+    workflow_id,
 ):
 
     region_name = os.environ["AWS_REGION"]
@@ -444,11 +467,11 @@ def main(
         print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
     catalog_created = handle_stac_outputs(
-        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id
+        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
     )
 
     annotations_created = handle_annotations(
-        s3_client, s3_endpoint, workspace, bucket, subfolder, job_id
+        s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, workflow_id
     )
 
     if not catalog_created and not annotations_created:
@@ -457,9 +480,10 @@ def main(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 6:
         print(
-            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id>",
+            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id> <workflow_id>",
+            f"you provided {len(sys.argv)} arguments",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -467,5 +491,6 @@ if __name__ == "__main__":
     bucket = sys.argv[2]
     subfolder = sys.argv[3]
     job_id = sys.argv[4]
+    workflow_id = sys.argv[5]
 
-    main(cat_url, bucket, subfolder, job_id)
+    main(cat_url, bucket, subfolder, job_id, workflow_id)
