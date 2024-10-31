@@ -122,13 +122,20 @@ def get_bucket_from_namespace() -> str:
         print(f"Exception when fetching workspace bucket: {e}", file=sys.stderr)
 
 
-def send_to_ingester(harvest_list: List[str], bucket: str, workspace: str):
+def send_to_ingester(
+    harvest_list: List[str],
+    bucket: str,
+    workspace: str,
+    topic: str,
+    name: str,
+    job_id: str,
+    workflow_id: str,
+):
     pulsar_url = os.getenv("PULSAR_URL", "")
     pulsar_client = pulsar.Client(pulsar_url)
-    pulsar_topic = "harvested"
-    producer = pulsar_client.create_producer(topic=pulsar_topic, producer_name="ades-outputs")
+    producer = pulsar_client.create_producer(topic=topic, producer_name=name)
     message_dict = {
-        "id": f"ades-outputs/{workspace}",
+        "id": f"{name}/{workspace}",
         "workspace": workspace,
         "repository": "",
         "branch": "main",
@@ -138,6 +145,8 @@ def send_to_ingester(harvest_list: List[str], bucket: str, workspace: str):
         "deleted_keys": [],
         "source": workspace,
         "target": f"user-datasets/{workspace}",
+        "job_id": job_id,
+        "workflow_id": workflow_id,
     }
     try:
         # send message
@@ -307,12 +316,139 @@ def generate_new_collection(
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
     print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
-    send_to_ingester(files_for_harvesting, bucket, workspace)
+    send_to_ingester(
+        files_for_harvesting,
+        bucket,
+        workspace,
+        "harvested",
+        "ades-outputs-stac",
+        job_id,
+        workflow_id,
+    )
 
     print(
         "Generated new collection and uploaded to S3",
         file=sys.stdout,
     )
+
+    return True
+
+
+def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name) -> bool:
+    try:
+        with open(os.path.join("/tmp/outputs", file_name), "r") as file:
+            try:
+                # Check if file is valid JSON
+                _ = json.load(file)
+            except json.JSONDecodeError:
+                print("Failed to read annotations.json, it is not valid JSON", file=sys.stderr)
+                print(file.read(), file=sys.stderr)
+                return False
+    except FileNotFoundError:
+        print(f"Failed to load annotations in {file_name}", file=sys.stderr)
+        return False
+
+    # Construct path for annotations in S3
+    s3_path = os.path.normpath(
+        os.path.join(
+            workspace, subfolder, cat_id, file_name
+        )  # save annotations at collection level
+    )
+
+    # Upload annotations to S3
+    print(f"Uploading annotations to {s3_path}", file=sys.stderr)
+    try:
+        s3_client.upload_file(
+            os.path.join("/tmp/outputs", file_name),
+            s3_endpoint,
+            s3_path,
+        )
+        print(f"Annotations in {file_name} uploaded successfully", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(
+            f"Failed to upload annotations in {file_name} to {s3_path}: {e}",
+            file=sys.stderr,
+        )
+        return False
+
+
+def handle_annotations(
+    s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, workflow_id
+) -> bool:
+    """
+    Handle annotations defined in the annotations.json file
+    """
+
+    cat_id = f"cat_{job_id}"
+    added_annotations = []
+
+    # Identify all annotations files
+    for file_name in os.listdir("/tmp/outputs"):
+        if file_name.endswith("-annotations.json"):
+            if upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name):
+                added_annotations.append(f"{workspace}/{subfolder}/{cat_id}/{file_name}")
+
+    # Send annotations to ingester
+    if added_annotations:
+        print(
+            "Annotations found, sending to ingester",
+            file=sys.stdout,
+        )
+        send_to_ingester(
+            added_annotations,
+            bucket,
+            workspace,
+            "harvested-annotations",
+            "ades-outputs-annotations",
+            job_id,
+            workflow_id,
+        )
+        return True
+
+    return False
+
+
+def main(
+    cat_url,
+    bucket,
+    subfolder,
+    job_id,
+    workflow_id,
+):
+
+    region_name = os.environ["AWS_REGION"]
+    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
+    s3_endpoint = bucket
+    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
+    workspace = os.environ["WORKSPACE"]
+
+    try:
+        shutil.copytree(cat_url, "/tmp/outputs")
+    except FileNotFoundError:
+        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        raise
+
+    # Create S3 client
+    s3_client = get_aws_client(endpoint_url, region_name)
+
+    # Identify access point
+    access_point = get_bucket_from_namespace()
+    if access_point:
+        s3_endpoint = access_point
+        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
+
+    catalog_created = handle_stac_outputs(
+        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
+    )
+
+    annotations_created = handle_annotations(
+        s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, workflow_id
+    )
+
+    if not catalog_created and not annotations_created:
+        print("No outputs generated, stageout failed", file=sys.stderr)
+        raise
 
 
 def handle_current_collection(
@@ -490,9 +626,10 @@ def main(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 6:
         print(
-            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id>",
+            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id> <workflow_id>",
+            f"you provided {len(sys.argv)} arguments",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -500,5 +637,6 @@ if __name__ == "__main__":
     bucket = sys.argv[2]
     subfolder = sys.argv[3]
     job_id = sys.argv[4]
+    workflow_id = sys.argv[5]
 
-    main(job_id, cat_url, bucket, subfolder)
+    main(cat_url, bucket, subfolder, job_id, workflow_id)
