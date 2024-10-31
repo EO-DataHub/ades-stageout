@@ -925,6 +925,7 @@ def test_main_access_point_no_collection(
         "WORKSPACE_DOMAIN": "test.workspace.domain.com",
     },
 )
+@patch("os.listdir")
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
 @patch("stageout.upload_items")
@@ -946,12 +947,14 @@ def test_main_access_point_with_collection(
     mock_upload_items,
     mock_send_to_ingester,
     mock_get_aws_client,
+    mock_os_listdir,
 ):
     """Test main function with no AWS credentials, instead using access point"""
 
     # Configure test variables
-    job_id = "12345678"
+    job_id = "1234-5678"
     collection_id = f"col_{job_id}"
+    workflow_id = "test-workflow"
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
@@ -996,6 +999,7 @@ def test_main_access_point_with_collection(
     )
 
     mock_shutil_copytree.return_value = None
+    mock_os_listdir.return_value = ["catalog.json"]  # no annotations present
 
     mock_pystac_read_file.return_value = mock_catalog
     mock_pystac_write_file.return_value = None
@@ -1012,7 +1016,7 @@ def test_main_access_point_with_collection(
 
     mock_send_to_ingester.return_value = None
 
-    main(job_id, cat_url, bucket, subfolder)
+    main(cat_url, bucket, subfolder, job_id, "test-workflow")
 
     # Check calls are as expected
     mock_catalog.set_self_href.assert_called_once_with(
@@ -1060,6 +1064,10 @@ def test_main_access_point_with_collection(
         ],
         bucket,
         "test_workspace",
+        "harvested",
+        "ades-outputs-stac",
+        workflow_id,
+        job_id,
     )
 
 
@@ -1377,7 +1385,7 @@ def test_handle_annotations_no_annotations(
 @patch("stageout.upload_items")
 @patch("stageout.send_to_ingester")
 @patch("pystac.write_file")
-def test_handle_stac_outputs_success(
+def test_handle_stac_outputs_no_collection_success(
     mock_write_file,
     mock_send_to_ingester,
     mock_upload_items,
@@ -1402,6 +1410,7 @@ def test_handle_stac_outputs_success(
     mock_catalog.clear_items.return_value = None
     mock_catalog.add_child.return_value = None
     mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.get_all_collections.return_value = []
     mock_catalog.get_self_href.return_value = (
         f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
     )
@@ -1435,6 +1444,85 @@ def test_handle_stac_outputs_success(
         mock_collection,
         dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}/collection.json",
     )
+    mock_write_file.assert_any_call(
+        mock_catalog,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}.json",
+    )
+    mock_send_to_ingester.assert_called_once()
+
+
+@patch("pystac.read_file")
+@patch("os.path.join")
+@patch("stageout.CustomStacIO")
+@patch("stageout.construct_collection_and_upload_assets")
+@patch("stageout.upload_items")
+@patch("stageout.send_to_ingester")
+@patch("pystac.write_file")
+def test_handle_stac_outputs_with_collection_success(
+    mock_write_file,
+    mock_send_to_ingester,
+    mock_upload_items,
+    mock_construct_collection,
+    mock_CustomStacIO,
+    mock_os_path_join,
+    mock_read_file,
+):
+    # Configure mocks
+    s3_client = mock.Mock()
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "1234-5678"
+
+    # Mock the collection construction and upload
+    mock_collection = mock.Mock()
+    mock_item = mock.Mock()
+    mock_item.id = "item_id"
+    mock_assets_1 = mock.Mock()
+    mock_assets_1.items.return_value = [
+        ("test_asset_item", Asset("test_href_1")),
+    ]
+    mock_item.set_self_href.return_value = None
+    mock_item.links = [Link("self", "test_self_href")]
+    mock_item.get_assets.return_value = mock_assets_1
+    mock_collection.get_items.return_value = [mock_item]
+    mock_construct_collection.return_value = mock_collection
+
+    # Mock the pystac.read_file to return a mock catalog
+    mock_catalog = mock.Mock()
+    mock_catalog.id = "test_catalog"
+    mock_catalog.links = [Link("root", "test_root_href"), Link("self", "test_self_href")]
+    mock_catalog.clear_items.return_value = None
+    mock_catalog.add_child.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.get_all_collections.return_value = [mock_collection]
+    mock_catalog.get_self_href.return_value = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
+    )
+    mock_os_path_join.return_value = "/tmp/outputs/catalog.json"
+    mock_read_file.return_value = mock_catalog
+
+    # Mock the upload_items function
+    mock_upload_items.return_value = []
+
+    result = handle_stac_outputs(
+        s3_client,
+        s3_endpoint,
+        workspace_domain,
+        workspace,
+        bucket,
+        subfolder,
+        job_id,
+        "test-workflow",
+    )
+    assert result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    # mock_write_file.assert_any_call(
+    #     mock_collection,
+    #     dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}/collection.json",
+    # )
     mock_write_file.assert_any_call(
         mock_catalog,
         dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}.json",
