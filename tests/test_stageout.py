@@ -633,8 +633,9 @@ def test_construct_collection_and_upload_assets_exception(capsys):
 
     # Check exceptions are handled correctly
     error_out = capsys.readouterr().err
-    assert f"upload {mock_item_1.id} to {s3_endpoint} at {subfolder} failed" in error_out
-    assert f"upload {mock_item_2.id} to {s3_endpoint} at {subfolder} failed" in error_out
+    print(error_out)
+    assert f"Upload {mock_item_1.id} to {s3_endpoint} at {subfolder} failed" in error_out
+    assert f"Upload {mock_item_2.id} to {s3_endpoint} at {subfolder} failed" in error_out
 
     # Check output result
     assert result
