@@ -1,8 +1,9 @@
 import json
 import os
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
+import pystac
 from kubernetes.client.rest import ApiException
 
 from stageout import (
@@ -11,8 +12,11 @@ from stageout import (
     get_aws_client,
     get_bucket_from_namespace,
     get_current_namespace,
+    handle_annotations,
+    handle_stac_outputs,
     main,
     send_to_ingester,
+    upload_annotation,
     upload_directory,
     upload_items,
 )
@@ -342,9 +346,11 @@ def test_send_to_ingester(mock_pulsar_client):
     test_harvest_list = ["test1", "test2"]
     test_bucket = "test_bucket"
     test_workspace = "test_workspace"
+    topic = "harvested-test"
+    name = "test_producer"
 
     expected_message = {
-        "id": f"ades-outputs/{test_workspace}",
+        "id": f"{name}/{test_workspace}",
         "workspace": test_workspace,
         "repository": "",
         "branch": "main",
@@ -354,11 +360,18 @@ def test_send_to_ingester(mock_pulsar_client):
         "deleted_keys": [],
         "source": test_workspace,
         "target": f"user-datasets/{test_workspace}",
+        "job_id": "jobID",
+        "workflow_id": "workflowID",
     }
 
-    send_to_ingester(test_harvest_list, test_bucket, test_workspace)
+    send_to_ingester(
+        test_harvest_list, test_bucket, test_workspace, topic, name, "jobID", "workflowID"
+    )
 
     # Check calls are as expected
+    mock_pulsar_client_instance.create_producer.assert_called_once_with(
+        topic=topic, producer_name=name
+    )
     mock_pulsar_producer.send.assert_called_once_with(json.dumps(expected_message).encode("utf-8"))
     mock_pulsar_producer.close.assert_called_once()
 
@@ -738,6 +751,8 @@ class Link:
         "WORKSPACE_DOMAIN": "test.workspace.domain.com",
     },
 )
+@patch("builtins.open", new_callable=mock_open, read_data='{"valid": "json"}')
+@patch("os.listdir")
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
 @patch("stageout.upload_items")
@@ -759,6 +774,8 @@ def test_main_access_point(
     mock_upload_items,
     mock_send_to_ingester,
     mock_get_aws_client,
+    mock_os_listdir,
+    mock_open,
 ):
     """Test main function with no AWS credentials, instead using access point"""
 
@@ -770,10 +787,14 @@ def test_main_access_point(
     subfolder = "test_subfolder"
     workspace = "test_workspace"
     workspace_domain = "test.workspace.domain.com"
+    topic = "harvested"
+    name = "ades-outputs-stac"
 
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
     mock_get_aws_client.return_value = mock_boto3_client_instance
+
+    mock_os_listdir.return_value = ["catalog.json", "collection-annotations.json"]
 
     mock_catalog = mock.Mock()
     mock_catalog.id = "test_catalog"
@@ -814,7 +835,7 @@ def test_main_access_point(
 
     mock_send_to_ingester.return_value = None
 
-    main(job_id, cat_url, bucket, subfolder)
+    main(cat_url, bucket, subfolder, job_id, "test-workflow")
 
     # Check calls are as expected
     assert mock_collection.update_extent_from_items.call_count == 1
@@ -860,8 +881,9 @@ def test_main_access_point(
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
 
-    assert mock_send_to_ingester.call_count == 1
-    mock_send_to_ingester.assert_called_once_with(
+    assert mock_send_to_ingester.call_count == 2
+    # Check STAC call
+    mock_send_to_ingester.assert_any_call(
         [
             "test_item_1",
             "test_item_2",
@@ -870,6 +892,22 @@ def test_main_access_point(
         ],
         bucket,
         "test_workspace",
+        topic,
+        name,
+        job_id,
+        "test-workflow",
+    )
+    # Check annotations call
+    mock_send_to_ingester.assert_any_call(
+        [
+            f"{workspace}/{subfolder}/cat_{job_id}/collection-annotations.json",
+        ],
+        bucket,
+        "test_workspace",
+        "harvested-annotations",
+        "ades-outputs-annotations",
+        job_id,
+        "test-workflow",
     )
 
 
@@ -910,6 +948,7 @@ def test_get_current_namespace_error(mock_open):
         "WORKSPACE_DOMAIN": "test.workspace.domain.com",
     },
 )
+@patch("os.listdir")
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
 @patch("stageout.upload_items")
@@ -931,6 +970,7 @@ def test_main_no_access_point(
     mock_upload_items,
     mock_send_to_ingester,
     mock_get_aws_client,
+    mock_os_listdir,
 ):
     """Test main function with AWS credentials"""
 
@@ -942,10 +982,14 @@ def test_main_no_access_point(
     subfolder = "test_subfolder"
     workspace = "test_workspace"
     workspace_domain = "test.workspace.domain.com"
+    topic = "harvested"
+    name = "ades-outputs-stac"
 
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
     mock_get_aws_client.return_value = mock_boto3_client_instance
+
+    mock_os_listdir.return_value = ["catalog.json"]
 
     mock_catalog = mock.Mock()
     mock_catalog.id = "test_catalog"
@@ -987,7 +1031,7 @@ def test_main_no_access_point(
 
     mock_send_to_ingester.return_value = None
 
-    main(job_id, cat_url, bucket, subfolder)
+    main(cat_url, bucket, subfolder, job_id, "test-workflow")
 
     # Check calls are as expected
     assert mock_collection.update_extent_from_items.call_count == 1
@@ -1043,4 +1087,252 @@ def test_main_no_access_point(
         ],
         "test_bucket",
         "test_workspace",
+        topic,
+        name,
+        job_id,
+        "test-workflow",
     )
+
+
+@patch("builtins.open", new_callable=mock_open, read_data='{"valid": "json"}')
+@patch("os.path.join")
+@patch("os.path.normpath")
+@patch("os.listdir")
+def test_upload_annotation_success(mock_os_listdir, mock_normpath, mock_join, mock_open):
+    s3_client = mock.Mock()
+    s3_client.upload_file.return_value = None
+    mock_join.return_value = "/tmp/outputs/annotations.json"
+    mock_normpath.return_value = "workspace/subfolder/cat_id/annotations.json"
+    mock_os_listdir.return_value = ["file-annotations.json"]
+    s3_endpoint = "s3_endpoint"
+    workspace = "workspace"
+    subfolder = "processing-results"
+    cat_id = "cat_id"
+    file_name = "annotations.json"
+
+    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name)
+    assert result
+    s3_client.upload_file.assert_called_once_with(
+        "/tmp/outputs/annotations.json", s3_endpoint, "workspace/subfolder/cat_id/annotations.json"
+    )
+
+
+@patch("builtins.open", new_callable=mock_open, read_data='{"invalid": json}')
+@patch("os.path.join")
+@patch("os.path.normpath")
+@patch("os.listdir")
+def test_upload_annotation_invalid_json(mock_os_listdir, mock_normpath, mock_join, mock_open):
+    s3_client = mock.Mock()
+    s3_client.upload_file.return_value = None
+    mock_join.return_value = "/tmp/outputs/annotations.json"
+    mock_normpath.return_value = "workspace/subfolder/cat_id/annotations.json"
+    mock_os_listdir.return_value = ["file-annotations.json"]
+    s3_endpoint = "s3_endpoint"
+    workspace = "workspace"
+    subfolder = "processing-results"
+    cat_id = "cat_id"
+    file_name = "annotations.json"
+
+    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name)
+    assert not result
+    assert s3_client.upload_file.call_count == 0
+
+
+@patch("builtins.open", side_effect=FileNotFoundError)
+@patch("os.path.join")
+@patch("os.path.normpath")
+@patch("os.listdir")
+def test_upload_annotation_file_not_found(mock_os_listdir, mock_normpath, mock_join, mock_open):
+    s3_client = mock.Mock()
+    s3_client.upload_file.return_value = None
+    mock_join.return_value = "/tmp/outputs/annotations.json"
+    mock_normpath.return_value = "workspace/subfolder/cat_id/annotations.json"
+    mock_os_listdir.return_value = ["file-annotations.json"]
+    s3_endpoint = "s3_endpoint"
+    workspace = "workspace"
+    subfolder = "processing-results"
+    cat_id = "cat_id"
+    file_name = "annotations.json"
+
+    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name)
+    assert not result
+    assert s3_client.upload_file.call_count == 0
+
+
+@patch("stageout.upload_annotation")
+@patch("stageout.send_to_ingester")
+@patch("os.listdir")
+def test_handle_annotations_success(mock_os_listdir, mock_send_to_ingester, mock_upload_annotation):
+    s3_client = mock.Mock()
+    mock_upload_annotation.return_value = True
+    mock_os_listdir.return_value = ["file-annotations.json", "file_2-annotations.json"]
+    s3_endpoint = "s3_endpoint"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "processing-results"
+    job_id = "job_id"
+
+    added_annotations = [
+        f"{workspace}/{subfolder}/cat_{job_id}/file-annotations.json",
+        f"{workspace}/{subfolder}/cat_{job_id}/file_2-annotations.json",
+    ]
+
+    result = handle_annotations(
+        s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, "test-workflow"
+    )
+    assert result
+    mock_send_to_ingester.assert_called_once_with(
+        added_annotations,
+        bucket,
+        workspace,
+        "harvested-annotations",
+        "ades-outputs-annotations",
+        job_id,
+        "test-workflow",
+    )
+
+
+@patch("stageout.upload_annotation")
+@patch("stageout.send_to_ingester")
+@patch("os.listdir")
+def test_handle_annotations_no_annotations(
+    mock_os_listdir, mock_send_to_ingester, mock_upload_annotation
+):
+    s3_client = mock.Mock()
+    mock_upload_annotation.return_value = True
+    mock_os_listdir.return_value = []
+    s3_endpoint = "s3_endpoint"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "processing-results"
+    job_id = "job_id"
+
+    result = handle_annotations(
+        s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, "test-workflow"
+    )
+    assert not result
+    assert mock_send_to_ingester.call_count == 0
+
+
+@patch("pystac.read_file")
+@patch("os.path.join")
+@patch("stageout.CustomStacIO")
+@patch("stageout.construct_collection_and_upload_assets")
+@patch("stageout.upload_items")
+@patch("stageout.send_to_ingester")
+@patch("pystac.write_file")
+def test_handle_stac_outputs_success(
+    mock_write_file,
+    mock_send_to_ingester,
+    mock_upload_items,
+    mock_construct_collection,
+    mock_CustomStacIO,
+    mock_os_path_join,
+    mock_read_file,
+):
+    # Configure mocks
+    s3_client = mock.Mock()
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "job_id"
+
+    # Mock the pystac.read_file to return a mock catalog
+    mock_catalog = mock.Mock()
+    mock_catalog.id = "test_catalog"
+    mock_catalog.links = [Link("root", "test_root_href"), Link("self", "test_self_href")]
+    mock_catalog.clear_items.return_value = None
+    mock_catalog.add_child.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.get_self_href.return_value = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
+    )
+    mock_os_path_join.return_value = "/tmp/outputs/catalog.json"
+    mock_read_file.return_value = mock_catalog
+
+    # Mock the collection construction and upload
+    mock_collection = mock.Mock()
+    mock_item = mock.Mock()
+    mock_item.id = "item_id"
+    mock_item.set_self_href.return_value = None
+    mock_collection.get_items.return_value = [mock_item]
+    mock_construct_collection.return_value = mock_collection
+
+    # Mock the upload_items function
+    mock_upload_items.return_value = []
+
+    result = handle_stac_outputs(
+        s3_client,
+        s3_endpoint,
+        workspace_domain,
+        workspace,
+        bucket,
+        subfolder,
+        job_id,
+        "test-workflow",
+    )
+    assert result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    mock_write_file.assert_any_call(
+        mock_collection,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}/collection.json",
+    )
+    mock_write_file.assert_any_call(
+        mock_catalog,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}.json",
+    )
+    mock_send_to_ingester.assert_called_once()
+
+
+@patch("pystac.read_file")
+def test_handle_stac_outputs_file_not_found(mock_read_file):
+    s3_client = mock.Mock()
+    mock_read_file.side_effect = FileNotFoundError
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "job_id"
+
+    result = handle_stac_outputs(
+        s3_client,
+        s3_endpoint,
+        workspace_domain,
+        workspace,
+        bucket,
+        subfolder,
+        job_id,
+        "test-workflow",
+    )
+    assert not result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+
+
+@patch("pystac.read_file")
+def test_handle_stac_outputs_stac_type_error(mock_read_file):
+    s3_client = mock.Mock()
+    mock_read_file.side_effect = pystac.STACTypeError(
+        bad_dict={"id": "test"}, expected=pystac.Catalog
+    )
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "job_id"
+
+    result = handle_stac_outputs(
+        s3_client,
+        s3_endpoint,
+        workspace_domain,
+        workspace,
+        bucket,
+        subfolder,
+        job_id,
+        "test-workflow",
+    )
+    assert not result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
