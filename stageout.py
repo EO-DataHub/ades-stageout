@@ -255,6 +255,7 @@ def generate_new_collection(
     subfolder,
     cat_id,
     job_id,
+    workflow_id,
 ):
     # create a STAC collection for the process
     date = datetime.now().strftime("%Y-%m-%d")
@@ -409,13 +410,7 @@ def handle_annotations(
     return False
 
 
-def main(
-    cat_url,
-    bucket,
-    subfolder,
-    job_id,
-    workflow_id,
-):
+def main(cat_url, bucket, subfolder, job_id, workflow_id):
 
     region_name = os.environ["AWS_REGION"]
     endpoint_url = os.environ["AWS_S3_ENDPOINT"]
@@ -438,6 +433,17 @@ def main(
         s3_endpoint = access_point
         print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
+    # Set custom STAC IO
+    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
+        def create_custom_stac_io():
+            return CustomStacIO(
+                s3_endpoint=s3_endpoint, workspace=workspace, workspace_domain=workspace_domain
+            )
+
+        return create_custom_stac_io
+
+    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
+
     catalog_created = handle_stac_outputs(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
     )
@@ -452,7 +458,17 @@ def main(
 
 
 def handle_current_collection(
-    s3_client, s3_endpoint, cat, collections, cat_id, workspace_domain, bucket, workspace, subfolder
+    s3_client,
+    s3_endpoint,
+    cat,
+    collections,
+    cat_id,
+    workspace_domain,
+    bucket,
+    workspace,
+    subfolder,
+    workflow_id,
+    job_id,
 ):
 
     files_for_harvesting = []
@@ -529,30 +545,38 @@ def handle_current_collection(
 
     print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
 
-    send_to_ingester(files_for_harvesting, bucket, workspace)
+    send_to_ingester(
+        files_for_harvesting,
+        bucket,
+        workspace,
+        "harvested",
+        "ades-outputs-stac",
+        workflow_id,
+        job_id,
+    )
 
     print("Uploaded existing collections to S3", file=sys.stdout)
 
 
-def main(
-    job_id,
-    cat_url,
+def handle_stac_outputs(
+    s3_client,
+    s3_endpoint,
+    workspace_domain,
+    workspace,
     bucket,
     subfolder,
-):
+    job_id,
+    workflow_id,
+) -> bool:
 
-    region_name = os.environ["AWS_REGION"]
-    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
-    s3_endpoint = bucket
-    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
-    workspace = os.environ["WORKSPACE"]
-
-    s3_endpoint = bucket
     try:
-        shutil.copytree(cat_url, "./tmp/catalog")
-    except Exception as e:
-        raise Exception("Failed to copy catalog to tmp directory") from e
-    cat = pystac.read_file(os.path.join("./tmp/catalog", "catalog.json"))
+        cat = pystac.read_file(os.path.join("/tmp/outputs", "catalog.json"))
+    except FileNotFoundError:
+        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        return False
+    except pystac.STACTypeError:
+        print("Failed to read STAC Catalog", file=sys.stderr)
+        return False
 
     # Create new catalog id
     cat.id = f"cat_{job_id}"
@@ -560,24 +584,6 @@ def main(
 
     # Create new collection id
     collection_id = f"col_{job_id}"
-
-    s3_client = get_aws_client(endpoint_url, region_name)
-
-    # Identify access point
-    access_point = get_bucket_from_namespace()
-    if access_point:
-        s3_endpoint = access_point
-        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
-
-    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
-        def create_custom_stac_io():
-            return CustomStacIO(
-                s3_endpoint=s3_endpoint, workspace=workspace, workspace_domain=workspace_domain
-            )
-
-        return create_custom_stac_io
-
-    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
 
     # Only need to generate collection if one is not already present in the generated catalog
     collections = list(cat.get_all_collections())
@@ -604,6 +610,7 @@ def main(
             subfolder,
             cat_id,
             job_id,
+            workflow_id,
         )
     else:
         # Use collections already present in the catalog
@@ -618,11 +625,14 @@ def main(
             bucket,
             workspace,
             subfolder,
+            workflow_id,
+            job_id,
         )
-
     # Upload catalog to S3
     print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
     pystac.write_file(cat, dest_href=cat_href)
+
+    return True
 
 
 if __name__ == "__main__":
