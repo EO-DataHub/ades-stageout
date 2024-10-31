@@ -291,11 +291,6 @@ def generate_new_collection(
 
     cat.add_child(collection)
 
-    # Set hrefs after normalization
-    cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
-    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
-    cat.set_self_href(cat_href)
-
     for item in collection.get_items():
         item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/{item.id}.json"
         item.set_self_href(item_href)
@@ -305,10 +300,6 @@ def generate_new_collection(
     collection.set_self_href(collection_href)
     print(f"Upload collection.json to {collection_href}", file=sys.stderr)
     pystac.write_file(collection, dest_href=collection_href)
-
-    # Upload catalog to S3
-    print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
-    pystac.write_file(cat, dest_href=cat_href)
 
     files_for_harvesting = upload_items(
         collection, cat_id, collection_id, bucket, workspace, subfolder
@@ -335,25 +326,17 @@ def handle_current_collection(
         f"Normalising Catalog hrefs to https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}",
         file=sys.stderr,
     )
-    cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
-
-    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
-    cat.set_self_href(cat_href)
 
     cat.clear_children()
 
-    for index, link in enumerate(cat.links):
-        if link.rel == "root":
-            cat.links.pop(index)  # remove root link
-
     for collection in collections:
-        collection.set_self_href(
-            f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
-        )
         cat.add_child(collection)
 
         items = collection.get_items()
 
+        collection.set_self_href(
+            f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
+        )
         for item in items:
             for index, link in enumerate(item.links):
                 if link.rel == "root":
@@ -405,10 +388,6 @@ def handle_current_collection(
         pystac.write_file(collection, dest_href=collection_href)
 
         files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection.id}.json")
-
-    # Upload catalog to S3
-    print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
-    pystac.write_file(cat, dest_href=cat_href)
 
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
 
@@ -466,6 +445,16 @@ def main(
 
     # Only need to generate collection if one is not already present in the generated catalog
     collections = list(cat.get_all_collections())
+
+    cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
+
+    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
+    cat.set_self_href(cat_href)
+
+    for index, link in enumerate(cat.links):
+        if link.rel == "root":
+            cat.links.pop(index)  # remove root link
+
     if not collections:
         print("No Collections found, generating new collection", file=sys.stderr)
         generate_new_collection(
@@ -494,6 +483,10 @@ def main(
             workspace,
             subfolder,
         )
+
+    # Upload catalog to S3
+    print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
+    pystac.write_file(cat, dest_href=cat_href)
 
 
 if __name__ == "__main__":
