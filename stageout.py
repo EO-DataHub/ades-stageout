@@ -187,7 +187,7 @@ def construct_collection_and_upload_assets(
                 )
             )
             print(
-                f"upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
+                f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
                 file=sys.stderr,
             )
             try:
@@ -200,7 +200,7 @@ def construct_collection_and_upload_assets(
                 upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
             except Exception as e:
                 print(
-                    f"upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
+                    f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
                     file=sys.stderr,
                 )
 
@@ -210,7 +210,7 @@ def construct_collection_and_upload_assets(
                 s3_path = s3_path[len(prefix) :]
             # Replace href with workspace-accessible url
             asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
-            print(f"replacing item href with {asset.href}", file=sys.stderr)
+            print(f"Replacing item href with {asset.href}", file=sys.stderr)
             item.add_asset(key, asset)
 
     return collection
@@ -238,44 +238,25 @@ def upload_items(
             )
         )
         pystac.write_file(item, dest_href=s3_path)
-        print(f"upload {item.id} to {s3_path}", file=sys.stderr)
+        print(f"Upload {item.id} to {s3_path}", file=sys.stderr)
         files_for_harvesting.append(s3_path.replace(f"s3://{bucket}/", "", 1))
 
     return files_for_harvesting
 
 
-def handle_stac_outputs(
-    s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
+def generate_new_collection(
+    collection_id,
+    cat,
+    s3_client,
+    s3_endpoint,
+    workspace,
+    workspace_domain,
+    bucket,
+    subfolder,
+    cat_id,
+    job_id,
+    workflow_id,
 ):
-    """
-    Handle STAC outputs defined in the catalog.json file
-    """
-    try:
-        cat = pystac.read_file(os.path.join("/tmp/outputs", "catalog.json"))
-    except FileNotFoundError:
-        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
-        return False
-    except pystac.STACTypeError:
-        print("Failed to read STAC Catalog", file=sys.stderr)
-        return False
-
-    # Create new catalog id
-    cat.id = f"cat_{job_id}"
-    cat_id = cat.id
-
-    # Create new collection id
-    collection_id = f"col_{job_id}"
-
-    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
-        def create_custom_stac_io():
-            return CustomStacIO(
-                s3_endpoint=s3_endpoint, workspace=workspace, workspace_domain=workspace_domain
-            )
-
-        return create_custom_stac_io
-
-    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
-
     # create a STAC collection for the process
     date = datetime.now().strftime("%Y-%m-%d")
 
@@ -320,11 +301,6 @@ def handle_stac_outputs(
 
     cat.add_child(collection)
 
-    # Set hrefs after normalization
-    cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
-    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
-    cat.set_self_href(cat_href)
-
     for item in collection.get_items():
         item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/{item.id}.json"
         item.set_self_href(item_href)
@@ -335,15 +311,12 @@ def handle_stac_outputs(
     print(f"Upload collection.json to {collection_href}", file=sys.stderr)
     pystac.write_file(collection, dest_href=collection_href)
 
-    # Upload catalog to S3
-    print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
-    pystac.write_file(cat, dest_href=cat_href)
-
     files_for_harvesting = upload_items(
         collection, cat_id, collection_id, bucket, workspace, subfolder
     )
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
+    print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
     send_to_ingester(
         files_for_harvesting,
         bucket,
@@ -355,7 +328,7 @@ def handle_stac_outputs(
     )
 
     print(
-        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}.json",
+        "Generated new collection and uploaded to S3",
         file=sys.stdout,
     )
 
@@ -437,13 +410,7 @@ def handle_annotations(
     return False
 
 
-def main(
-    cat_url,
-    bucket,
-    subfolder,
-    job_id,
-    workflow_id,
-):
+def main(cat_url, bucket, subfolder, job_id, workflow_id):
 
     region_name = os.environ["AWS_REGION"]
     endpoint_url = os.environ["AWS_S3_ENDPOINT"]
@@ -466,6 +433,17 @@ def main(
         s3_endpoint = access_point
         print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
+    # Set custom STAC IO
+    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
+        def create_custom_stac_io():
+            return CustomStacIO(
+                s3_endpoint=s3_endpoint, workspace=workspace, workspace_domain=workspace_domain
+            )
+
+        return create_custom_stac_io
+
+    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
+
     catalog_created = handle_stac_outputs(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
     )
@@ -477,6 +455,184 @@ def main(
     if not catalog_created and not annotations_created:
         print("No outputs generated, stageout failed", file=sys.stderr)
         raise
+
+
+def handle_current_collection(
+    s3_client,
+    s3_endpoint,
+    cat,
+    collections,
+    cat_id,
+    workspace_domain,
+    bucket,
+    workspace,
+    subfolder,
+    workflow_id,
+    job_id,
+):
+
+    files_for_harvesting = []
+
+    # Set hrefs after normalization
+    print(
+        f"Normalising Catalog hrefs to https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}",
+        file=sys.stderr,
+    )
+
+    cat.clear_children()
+
+    for collection in collections:
+        cat.add_child(collection)
+
+        items = collection.get_items()
+
+        collection.set_self_href(
+            f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
+        )
+        for item in items:
+            for index, link in enumerate(item.links):
+                if link.rel == "root":
+                    item.links.pop(index)  # remove root link
+
+            item.set_collection(collection)
+
+            for key, asset in item.get_assets().items():
+                s3_path = os.path.normpath(
+                    os.path.join(
+                        workspace, subfolder, cat_id, collection.id, os.path.basename(asset.href)
+                    )
+                )
+                print(
+                    f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
+                    file=sys.stderr,
+                )
+                try:
+                    s3_client.upload_file(
+                        asset.get_absolute_href(),
+                        s3_endpoint,
+                        s3_path,
+                    )
+                except IsADirectoryError:
+                    upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
+                except Exception as e:
+                    print(
+                        f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
+                        file=sys.stderr,
+                    )
+
+                # Remove workspace name from s3_path
+                prefix = f"{workspace}/"
+                if s3_path.startswith(prefix):
+                    s3_path = s3_path[len(prefix) :]
+                # Replace href with workspace-accessible url
+                asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
+                print(f"Replacing item href with {asset.href}", file=sys.stderr)
+                item.add_asset(key, asset)
+            item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
+            item.set_self_href(item_href)
+
+        files_for_harvesting += upload_items(
+            collection, cat_id, collection.id, bucket, workspace, subfolder
+        )
+        # Upload collection to S3
+        collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
+        print(f"Upload {collection.id}.json to {collection_href}", file=sys.stderr)
+        pystac.write_file(collection, dest_href=collection_href)
+
+        files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection.id}.json")
+
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
+
+    print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
+
+    send_to_ingester(
+        files_for_harvesting,
+        bucket,
+        workspace,
+        "harvested",
+        "ades-outputs-stac",
+        workflow_id,
+        job_id,
+    )
+
+    print("Uploaded existing collections to S3", file=sys.stdout)
+
+
+def handle_stac_outputs(
+    s3_client,
+    s3_endpoint,
+    workspace_domain,
+    workspace,
+    bucket,
+    subfolder,
+    job_id,
+    workflow_id,
+) -> bool:
+
+    try:
+        cat = pystac.read_file(os.path.join("/tmp/outputs", "catalog.json"))
+    except FileNotFoundError:
+        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        return False
+    except pystac.STACTypeError:
+        print("Failed to read STAC Catalog", file=sys.stderr)
+        return False
+
+    # Create new catalog id
+    cat.id = f"cat_{job_id}"
+    cat_id = cat.id
+
+    # Create new collection id
+    collection_id = f"col_{job_id}"
+
+    # Only need to generate collection if one is not already present in the generated catalog
+    collections = list(cat.get_all_collections())
+
+    cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
+
+    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json")
+    cat.set_self_href(cat_href)
+
+    for index, link in enumerate(cat.links):
+        if link.rel == "root":
+            cat.links.pop(index)  # remove root link
+
+    if not collections:
+        print("No Collections found, generating new collection", file=sys.stderr)
+        generate_new_collection(
+            collection_id,
+            cat,
+            s3_client,
+            s3_endpoint,
+            workspace,
+            workspace_domain,
+            bucket,
+            subfolder,
+            cat_id,
+            job_id,
+            workflow_id,
+        )
+    else:
+        # Use collections already present in the catalog
+        print("Collections found, using existing collections", file=sys.stderr)
+        handle_current_collection(
+            s3_client,
+            s3_endpoint,
+            cat,
+            collections,
+            cat_id,
+            workspace_domain,
+            bucket,
+            workspace,
+            subfolder,
+            workflow_id,
+            job_id,
+        )
+    # Upload catalog to S3
+    print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
+    pystac.write_file(cat, dest_href=cat_href)
+
+    return True
 
 
 if __name__ == "__main__":
