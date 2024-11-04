@@ -43,7 +43,7 @@ class CustomStacIO(DefaultStacIO):
         if parsed.scheme == "s3":
             # Output location is an S3 bucket - write directly to S3
             key = parsed.path[1:]
-            print(f"Uploading to {key} at self.s3_endpoint", file=sys.stderr)
+            print(f"Uploading to {key} at {self.s3_endpoint}", file=sys.stderr)
             self.s3_client.put_object(
                 Body=txt.encode("UTF-8"),
                 Bucket=self.s3_endpoint,
@@ -56,7 +56,7 @@ class CustomStacIO(DefaultStacIO):
             key_suffix = parsed.path.split("/")[3:]
             key_suffix = "/".join(key_suffix)
             key = f"{self.workspace}/{key_suffix}"
-            print(f"Uploading to {key} at self.s3_endpoint", file=sys.stderr)
+            print(f"Uploading to {key} at {self.s3_endpoint}", file=sys.stderr)
             self.s3_client.put_object(
                 Body=txt.encode("UTF-8"),
                 Bucket=self.s3_endpoint,
