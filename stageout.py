@@ -196,7 +196,6 @@ def handle_assets(
             rewrite_asset_href = False
 
         # Rewrite asset hrefs
-        print("rewrite is ", rewrite_asset_href)
         if rewrite_asset_href:
             # Remove workspace name from s3_path
             prefix = f"{workspace}/"
@@ -206,7 +205,6 @@ def handle_assets(
             asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
             print(f"Replacing item href with {asset.href}", file=sys.stderr)
             item.add_asset(key, asset)
-            print("CALLING")
     item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
     item.set_self_href(item_href)
 
