@@ -411,13 +411,13 @@ def test_construct_collection_and_upload_assets():
     mock_item_2.add_asset.return_value = None
     mock_catalog.get_items.return_value = [mock_item_1, mock_item_2]
     mock_collection.add_item.return_value = None
+    mock_collection.id = "test_collection"
 
     mock_s3_client = mock.Mock()
     mock_s3_client.upload_file.return_value = None
 
     # Configure test variables
     cat_id = "test_catalog"
-    collection_id = "test_collection"
     s3_endpoint = "s3://test-endpoint/path"
     subfolder = "test_subfolder"
     workspace = "test_workspace"
@@ -436,7 +436,6 @@ def test_construct_collection_and_upload_assets():
         mock_catalog,
         mock_collection,
         cat_id,
-        collection_id,
         mock_s3_client,
         s3_data,
     )
@@ -448,36 +447,36 @@ def test_construct_collection_and_upload_assets():
     assert calls[0][0] == (
         "/path/to/asset/test_1_href_1",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_1",
     )
     assert calls[1][0] == (
         "/path/to/asset/test_1_href_2",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_2",
     )
     assert calls[2][0] == (
         "/path/to/asset/test_2_href_1",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_1",
     )
     assert calls[3][0] == (
         "/path/to/asset/test_2_href_2",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_2",
     )
 
     # Check update href function
     expected_asset_1 = Asset(
-        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/test_1_href_1"
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/test_collection/test_1_href_1"
     )
     expected_asset_2 = Asset(
-        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/test_1_href_2"
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/test_collection/test_1_href_2"
     )
     expected_asset_3 = Asset(
-        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/test_2_href_1"
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/test_collection/test_2_href_1"
     )
     expected_asset_4 = Asset(
-        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/test_2_href_2"
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/test_collection/test_2_href_2"
     )
 
     calls = mock_item_1.add_asset.call_args_list
@@ -491,6 +490,70 @@ def test_construct_collection_and_upload_assets():
     assert calls[0][0][1].href == expected_asset_3.href
     assert calls[1][0][0] == ("test_asset_2_item_2")
     assert calls[1][0][1].href == expected_asset_4.href
+
+    # Check output result
+    assert result
+
+
+def test_construct_collection_and_upload_assets_external_links():
+    """Test construct_collection_and_upload_assets function with assets that are files"""
+
+    # Configure mocks
+    mock_catalog = mock.Mock()
+    mock_collection = mock.Mock()
+    mock_assets_1 = mock.Mock()
+    mock_assets_1.items.return_value = [
+        ("test_asset_1_item_1", Asset("test_1_href_1")),
+    ]
+    mock_item_1 = mock.Mock()
+    mock_item_1.set_collection.return_value = None
+    mock_item_1.get_assets.return_value = mock_assets_1
+    mock_item_1.add_asset.return_value = None
+    mock_catalog.get_items.return_value = [mock_item_1]
+    mock_collection.add_item.return_value = None
+    mock_collection.id = "test_collection"
+
+    mock_s3_client = mock.Mock()
+    mock_s3_client.upload_file.side_effect = (
+        Exception  # generic exception to force code to ignore this asset href
+    )
+
+    # Configure test variables
+    cat_id = "test_catalog"
+    s3_endpoint = "s3://test-endpoint/path"
+    subfolder = "test_subfolder"
+    workspace = "test_workspace"
+    workspace_domain = "test.workspace.domain.com"
+    bucket = "test_bucket"
+
+    s3_data = {
+        "s3_endpoint": s3_endpoint,
+        "subfolder": subfolder,
+        "workspace": workspace,
+        "workspace_domain": workspace_domain,
+        "bucket": bucket,
+    }
+
+    result = construct_collection_and_upload_assets(
+        mock_catalog,
+        mock_collection,
+        cat_id,
+        mock_s3_client,
+        s3_data,
+    )
+
+    # Check calls are as expected
+    # Check upload file call
+    assert mock_s3_client.upload_file.call_count == 1
+    calls = mock_s3_client.upload_file.call_args_list
+    assert calls[0][0] == (
+        "/path/to/asset/test_1_href_1",
+        s3_endpoint,
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_1",
+    )
+
+    # Check add_asset not called as this asset href should be left as is
+    mock_item_1.add_asset.assert_not_called()
 
     # Check output result
     assert result
@@ -524,13 +587,13 @@ def test_construct_collection_and_upload_assets_directory(mock_upload_directory)
     mock_item_2.add_asset.return_value = None
     mock_catalog.get_items.return_value = [mock_item_1, mock_item_2]
     mock_collection.add_item.return_value = None
+    mock_collection.id = "test_collection"
 
     mock_s3_client = mock.Mock()
     mock_s3_client.upload_file.side_effect = IsADirectoryError
 
     # Configure test variables
     cat_id = "test_catalog"
-    collection_id = "test_collection"
     s3_endpoint = "s3://test-endpoint/path"
     subfolder = "test_subfolder"
     workspace = "test_workspace"
@@ -549,7 +612,6 @@ def test_construct_collection_and_upload_assets_directory(mock_upload_directory)
         mock_catalog,
         mock_collection,
         cat_id,
-        collection_id,
         mock_s3_client,
         s3_data,
     )
@@ -561,25 +623,25 @@ def test_construct_collection_and_upload_assets_directory(mock_upload_directory)
         mock_s3_client,
         "/path/to/asset/test_1_href_1",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_1",
     )
     assert calls[1][0] == (
         mock_s3_client,
         "/path/to/asset/test_1_href_2",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_1_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_2",
     )
     assert calls[2][0] == (
         mock_s3_client,
         "/path/to/asset/test_2_href_1",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_1",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_1",
     )
     assert calls[3][0] == (
         mock_s3_client,
         "/path/to/asset/test_2_href_2",
         s3_endpoint,
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_2_href_2",
+        f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_2",
     )
 
     # Check output result
@@ -614,13 +676,13 @@ def test_construct_collection_and_upload_assets_exception(capsys):
     mock_item_2.add_asset.return_value = None
     mock_catalog.get_items.return_value = [mock_item_1, mock_item_2]
     mock_collection.add_item.return_value = None
+    mock_collection.id = "test_collection"
 
     mock_s3_client = mock.Mock()
     mock_s3_client.upload_file.side_effect = RuntimeError
 
     # Configure test variables
     cat_id = "test_catalog"
-    collection_id = "test_collection"
     s3_endpoint = "s3://test-endpoint/path"
     subfolder = "test_subfolder"
     workspace = "test_workspace"
@@ -639,14 +701,12 @@ def test_construct_collection_and_upload_assets_exception(capsys):
         mock_catalog,
         mock_collection,
         cat_id,
-        collection_id,
         mock_s3_client,
         s3_data,
     )
 
     # Check exceptions are handled correctly
     error_out = capsys.readouterr().err
-    print(error_out)
     assert f"Upload {mock_item_1.id} to {s3_endpoint} at {subfolder} failed" in error_out
     assert f"Upload {mock_item_2.id} to {s3_endpoint} at {subfolder} failed" in error_out
 
@@ -867,7 +927,6 @@ def test_main_access_point_no_collection(
         mock_catalog,
         mock_collection,
         f"cat_{job_id}",
-        collection_id,
         mock_boto3_client_instance,
         expected_s3_data,
     )
@@ -1225,7 +1284,6 @@ def test_main_no_access_point(
         mock_catalog,
         mock_collection,
         f"cat_{job_id}",
-        collection_id,
         mock_boto3_client_instance,
         expected_s3_data,
     )

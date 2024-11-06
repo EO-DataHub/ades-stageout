@@ -159,11 +159,60 @@ def send_to_ingester(
         pulsar_client.close()
 
 
+def handle_assets(
+    item: pystac.Item,
+    collection: pystac.Collection,
+    cat_id: str,
+    s3_client: boto3.client,
+    s3_endpoint: str,
+    subfolder: str,
+    workspace: str,
+    workspace_domain: str,
+    bucket: str,
+):
+    for key, asset in item.get_assets().items():
+        s3_path = os.path.normpath(
+            os.path.join(workspace, subfolder, cat_id, collection.id, os.path.basename(asset.href))
+        )
+        print(
+            f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
+            file=sys.stderr,
+        )
+        try:
+            s3_client.upload_file(
+                asset.get_absolute_href(),
+                s3_endpoint,
+                s3_path,
+            )
+            rewrite_asset_href = True
+        except IsADirectoryError:
+            upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
+            rewrite_asset_href = True
+        except Exception as e:
+            print(
+                f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
+                file=sys.stderr,
+            )
+            rewrite_asset_href = False
+
+        # Rewrite asset hrefs
+        if rewrite_asset_href:
+            # Remove workspace name from s3_path
+            prefix = f"{workspace}/"
+            if s3_path.startswith(prefix):
+                s3_path = s3_path[len(prefix) :]
+            # Replace href with workspace-accessible url
+            asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
+            print(f"Replacing item href with {asset.href}", file=sys.stderr)
+            item.add_asset(key, asset)
+    item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
+    item.set_self_href(item_href)
+
+
 def construct_collection_and_upload_assets(
     cat: pystac.Catalog,
     collection: pystac.Collection,
     cat_id: str,
-    collection_id: str,
     s3_client: boto3.client,
     s3_data: dict,
 ) -> pystac.Collection:
@@ -180,38 +229,17 @@ def construct_collection_and_upload_assets(
 
         collection.add_item(item)
 
-        for key, asset in item.get_assets().items():
-            s3_path = os.path.normpath(
-                os.path.join(
-                    workspace, subfolder, cat_id, collection_id, os.path.basename(asset.href)
-                )
-            )
-            print(
-                f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
-                file=sys.stderr,
-            )
-            try:
-                s3_client.upload_file(
-                    asset.get_absolute_href(),
-                    s3_endpoint,
-                    s3_path,
-                )
-            except IsADirectoryError:
-                upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
-            except Exception as e:
-                print(
-                    f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
-                    file=sys.stderr,
-                )
-
-            # Remove workspace name from s3_path
-            prefix = f"{workspace}/"
-            if s3_path.startswith(prefix):
-                s3_path = s3_path[len(prefix) :]
-            # Replace href with workspace-accessible url
-            asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
-            print(f"Replacing item href with {asset.href}", file=sys.stderr)
-            item.add_asset(key, asset)
+        handle_assets(
+            item,
+            collection,
+            cat_id,
+            s3_client,
+            s3_endpoint,
+            subfolder,
+            workspace,
+            workspace_domain,
+            bucket,
+        )
 
     return collection
 
@@ -291,19 +319,13 @@ def generate_new_collection(
         "bucket": bucket,
     }
 
-    collection = construct_collection_and_upload_assets(
-        cat, collection, cat_id, collection_id, s3_client, s3_data
-    )
+    collection = construct_collection_and_upload_assets(cat, collection, cat_id, s3_client, s3_data)
 
     collection.update_extent_from_items()
 
     cat.clear_items()
 
     cat.add_child(collection)
-
-    for item in collection.get_items():
-        item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/{item.id}.json"
-        item.set_self_href(item_href)
 
     # Upload collection to S3
     collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/collection.json"
@@ -496,40 +518,17 @@ def handle_current_collection(
 
             item.set_collection(collection)
 
-            for key, asset in item.get_assets().items():
-                s3_path = os.path.normpath(
-                    os.path.join(
-                        workspace, subfolder, cat_id, collection.id, os.path.basename(asset.href)
-                    )
-                )
-                print(
-                    f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
-                    file=sys.stderr,
-                )
-                try:
-                    s3_client.upload_file(
-                        asset.get_absolute_href(),
-                        s3_endpoint,
-                        s3_path,
-                    )
-                except IsADirectoryError:
-                    upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
-                except Exception as e:
-                    print(
-                        f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
-                        file=sys.stderr,
-                    )
-
-                # Remove workspace name from s3_path
-                prefix = f"{workspace}/"
-                if s3_path.startswith(prefix):
-                    s3_path = s3_path[len(prefix) :]
-                # Replace href with workspace-accessible url
-                asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
-                print(f"Replacing item href with {asset.href}", file=sys.stderr)
-                item.add_asset(key, asset)
-            item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
-            item.set_self_href(item_href)
+            handle_assets(
+                item,
+                collection,
+                cat_id,
+                s3_client,
+                s3_endpoint,
+                subfolder,
+                workspace,
+                workspace_domain,
+                bucket,
+            )
 
         files_for_harvesting += upload_items(
             collection, cat_id, collection.id, bucket, workspace, subfolder
