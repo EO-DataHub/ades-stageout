@@ -326,10 +326,7 @@ def generate_new_collection(
     cat.clear_items()
 
     cat.add_child(collection)
-
-    for item in collection.get_items():
-        item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}/{item.id}.json"
-        item.set_self_href(item_href)
+        
 
     # Upload collection to S3
     collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/collection.json"
