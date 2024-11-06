@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.4 (2024-11-06)
+Update asset handling to maintain external links
+- Separate out the handling of asset hrefs to avoid duplicate code
+- Ensure asset hrefs that are external to our deployment are left as found and are not updated to use HTTPS links
+- Update unit tests to confirm this
+
+## v0.1.3 (2024-10-31
+Support Annotations and Pre-generated Collections
+- Extract annotation files (`*-annotations.json`) and send to transformer
+- Handle collections contained within workflow outputs
+  - In this case no new collection needs to be generated
+  - Links are updated to ensure absolute links based on HTTPS S3 locations)
 
 ## v0.1.2 (2024-10-29)
 Support collections output by workflows
