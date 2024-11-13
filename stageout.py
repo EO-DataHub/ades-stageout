@@ -14,7 +14,6 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from pystac.stac_io import DefaultStacIO, StacIO
 
-
 class CustomStacIO(DefaultStacIO):
     """Custom STAC IO class that uses boto3 to read from S3."""
 
@@ -68,7 +67,7 @@ class CustomStacIO(DefaultStacIO):
             super().write_text(dest, txt, *args, **kwargs)
 
 
-def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
+def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str=None) -> boto3.client:
     # Configure AWS client
     if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         s3_client = boto3.client(
@@ -78,8 +77,41 @@ def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
             endpoint_url=endpoint_url,
             region_name=region_name,
         )
+    elif aws_creds_path and os.path.exists(aws_creds_path):
+        sts_client = boto3.client("sts")
+
+        username = get_current_namespace()
+
+        session = boto3.Session(profile_name='default')
+        credentials = session.get_credentials()
+        current_credentials = credentials.get_frozen_credentials()
+        print(f"AWS Access Key ID: {current_credentials.access_key}", file=sys.stderr)
+        print(f"AWS Secret Access Key: {current_credentials.secret_key}", file=sys.stderr)
+
+        # role = sts_client.assume_role_with_web_identity(
+        #     RoleArn=role_arn,
+        #     RoleSessionName=f"{username}-session",
+        #     WebIdentityToken=token,
+        # )
+        # creds = role["Credentials"]
+
+        # print("Creds are:")
+        # print(creds)
+
+        s3_client = boto3.client(
+            "s3",
+            # aws_access_key_id=creds['AccessKeyId'],
+            # aws_secret_access_key=creds['SecretAccessKey'],
+            endpoint_url=endpoint_url,
+            region_name=region_name,
+        )
+        print("Connected with creds file", file=sys.stderr)
     else:
-        s3_client = boto3.client("s3")
+        try:
+            s3_client = boto3.client("s3")
+        except Exception as e:
+            print(f"Failed to configure AWS client: {e}", file=sys.stderr)
+            raise
     return s3_client
 
 
@@ -635,9 +667,9 @@ def handle_stac_outputs(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 6:
+    if len(sys.argv) != 7:
         print(
-            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id> <workflow_id>",
+            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id> <workflow_id> <token>",
             f"you provided {len(sys.argv)} arguments",
             file=sys.stderr,
         )
@@ -647,5 +679,8 @@ if __name__ == "__main__":
     subfolder = sys.argv[3]
     job_id = sys.argv[4]
     workflow_id = sys.argv[5]
+    token = sys.argv[6]
+
+    role_arn = os.getenv("AWS_ROLE_ARN")
 
     main(cat_url, bucket, subfolder, job_id, workflow_id)
