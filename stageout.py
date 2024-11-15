@@ -633,9 +633,9 @@ def handle_stac_outputs(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 7:
+    if len(sys.argv) != 6:
         print(
-            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id> <workflow_id> <token>",
+            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id> <workflow_id>",
             f"you provided {len(sys.argv)} arguments",
             file=sys.stderr,
         )
@@ -645,6 +645,5 @@ if __name__ == "__main__":
     subfolder = sys.argv[3]
     job_id = sys.argv[4]
     workflow_id = sys.argv[5]
-    token = sys.argv[6]
 
     main(cat_url, bucket, subfolder, job_id, workflow_id)
