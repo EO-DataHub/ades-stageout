@@ -67,7 +67,7 @@ class CustomStacIO(DefaultStacIO):
             super().write_text(dest, txt, *args, **kwargs)
 
 
-def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str=None) -> boto3.client:
+def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
     # Configure AWS client
     if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         s3_client = boto3.client(
@@ -77,37 +77,9 @@ def get_aws_client(endpoint_url: str, region_name: str, aws_creds_path: str=None
             endpoint_url=endpoint_url,
             region_name=region_name,
         )
-    elif aws_creds_path and os.path.exists(aws_creds_path):
-        sts_client = boto3.client("sts")
-
-        username = get_current_namespace()
-
-        session = boto3.Session(profile_name='default')
-        credentials = session.get_credentials()
-        current_credentials = credentials.get_frozen_credentials()
-        print(f"AWS Access Key ID: {current_credentials.access_key}", file=sys.stderr)
-        print(f"AWS Secret Access Key: {current_credentials.secret_key}", file=sys.stderr)
-
-        # role = sts_client.assume_role_with_web_identity(
-        #     RoleArn=role_arn,
-        #     RoleSessionName=f"{username}-session",
-        #     WebIdentityToken=token,
-        # )
-        # creds = role["Credentials"]
-
-        # print("Creds are:")
-        # print(creds)
-
-        s3_client = boto3.client(
-            "s3",
-            # aws_access_key_id=creds['AccessKeyId'],
-            # aws_secret_access_key=creds['SecretAccessKey'],
-            endpoint_url=endpoint_url,
-            region_name=region_name,
-        )
-        print("Connected with creds file", file=sys.stderr)
     else:
         try:
+            # First uses credentials file, then service account
             s3_client = boto3.client("s3")
         except Exception as e:
             print(f"Failed to configure AWS client: {e}", file=sys.stderr)
@@ -481,12 +453,6 @@ def main(cat_url, bucket, subfolder, job_id, workflow_id):
     # Create S3 client
     s3_client = get_aws_client(endpoint_url, region_name)
 
-    # Identify access point
-    access_point = get_bucket_from_namespace()
-    if access_point:
-        s3_endpoint = access_point
-        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
-
     # Set custom STAC IO
     def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
         def create_custom_stac_io():
@@ -680,7 +646,5 @@ if __name__ == "__main__":
     job_id = sys.argv[4]
     workflow_id = sys.argv[5]
     token = sys.argv[6]
-
-    role_arn = os.getenv("AWS_ROLE_ARN")
 
     main(cat_url, bucket, subfolder, job_id, workflow_id)
