@@ -14,6 +14,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from pystac.stac_io import DefaultStacIO, StacIO
 
+
 class CustomStacIO(DefaultStacIO):
     """Custom STAC IO class that uses boto3 to read from S3."""
 
