@@ -10,6 +10,9 @@ import boto3
 import botocore
 import pulsar
 import pystac
+import requests
+from botocore.exceptions import ClientError
+from html_sanitizer import Sanitizer
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from pystac.stac_io import DefaultStacIO, StacIO
@@ -500,6 +503,7 @@ def handle_current_collection(
         f"Normalising Catalog hrefs to https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}",
         file=sys.stderr,
     )
+    sanitizer = Sanitizer()
 
     cat.clear_children()
 
@@ -507,10 +511,59 @@ def handle_current_collection(
         cat.add_child(collection)
 
         items = collection.get_items()
-
         collection.set_self_href(
             f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
         )
+
+        # Check for license link
+        for link in collection.links:
+            if link.rel == "license":
+                license_href = link.href
+                license_filename = os.path.basename(license_href)
+                # public_bucket = "spdx-public-eodhp-dev"
+                public_bucket = os.getenv("SPDX_S3_BUCKET")
+                hosted_zone = os.getenv("HOSTED_ZONE")
+                public_path = f"api/catalogue/licences/{workspace}/{license_filename}"
+                public_url = f"https://{hosted_zone}{public_path}"
+
+                # Check if the file already exists in the S3 bucket
+                try:
+                    s3_client.head_object(Bucket=public_bucket, Key=public_path)
+                    # File exists, no need to re-upload
+                    link.href = public_url
+                    continue
+                except ClientError:
+                    # File does not exist, proceed with upload
+                    pass
+
+                if not license_href.startswith("http"):
+                    # It's a relative link, read the file
+                    license_path = os.path.join(subfolder, license_href)
+                    with open(license_path, "r") as file:
+                        license_content = file.read()
+                else:
+                    # It's an external URL, download the file
+                    response = requests.get(license_href)
+                    response.raise_for_status()
+                    license_content = response.text
+
+                # Sanitize the license file if it's HTML
+                if license_filename.endswith(".html"):
+                    license_content = sanitizer.sanitize(license_content)
+
+                # Upload the license file to the public S3 bucket with correct content type
+                s3_client.put_object(
+                    Bucket=public_bucket,
+                    Key=public_path,
+                    Body=license_content,
+                    ContentType=(
+                        "text/html" if license_filename.endswith(".html") else "text/plain"
+                    ),
+                )
+
+                # Update the license link to point to the new public URL
+                link.href = public_url
+
         for item in items:
             for index, link in enumerate(item.links):
                 if link.rel == "root":
