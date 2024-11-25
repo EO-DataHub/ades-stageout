@@ -82,7 +82,12 @@ def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
             region_name=region_name,
         )
     else:
-        s3_client = boto3.client("s3")
+        try:
+            # First uses credentials file, then service account
+            s3_client = boto3.client("s3")
+        except Exception as e:
+            print(f"Failed to configure AWS client: {e}", file=sys.stderr)
+            raise
     return s3_client
 
 
@@ -451,12 +456,6 @@ def main(cat_url, bucket, subfolder, job_id, workflow_id):
 
     # Create S3 client
     s3_client = get_aws_client(endpoint_url, region_name)
-
-    # Identify access point
-    access_point = get_bucket_from_namespace()
-    if access_point:
-        s3_endpoint = access_point
-        print(f"Found access point {access_point} in workspace {workspace}", file=sys.stderr)
 
     # Set custom STAC IO
     def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
