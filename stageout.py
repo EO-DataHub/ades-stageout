@@ -523,7 +523,7 @@ def handle_current_collection(
                 public_bucket = os.getenv("SPDX_S3_BUCKET")
                 hosted_zone = os.getenv("HOSTED_ZONE")
                 public_path = f"api/catalogue/licences/{workspace}/{license_filename}"
-                public_url = f"https://{hosted_zone}{public_path}"
+                public_url = f"https://{hosted_zone}/{public_path}"
                 print(
                     f"A -> Public URL: {public_url} and bucket is {public_bucket}", file=sys.stderr
                 )
@@ -544,7 +544,7 @@ def handle_current_collection(
 
                 if not license_href.startswith("http"):
                     # It's a relative link, read the file
-                    license_path = os.path.join(subfolder, license_href)
+                    license_path = os.path.join("/tmp/outputs", license_href)
                     with open(license_path, "r") as file:
                         license_content = file.read()
                     print(
@@ -565,6 +565,9 @@ def handle_current_collection(
                     print(f"F -> License content(sanitized): {license_content}", file=sys.stderr)
 
                 # Upload the license file to the public S3 bucket with correct content type
+                print(
+                    f"public_path {public_path} and public_url {public_url} and bucket name {public_bucket}"
+                )
                 s3_client.put_object(
                     Bucket=public_bucket,
                     Key=public_path,
