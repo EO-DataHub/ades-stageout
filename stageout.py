@@ -515,6 +515,7 @@ def handle_current_collection(
         )
 
         # Check for license link
+        print(f"collection {collection.links}")
         for link in collection.links:
             if link.rel == "license":
                 license_href = link.href
@@ -524,20 +525,24 @@ def handle_current_collection(
                 hosted_zone = os.getenv("HOSTED_ZONE")
                 public_path = f"api/catalogue/licences/{workspace}/{license_filename}"
                 public_url = f"https://{hosted_zone}/{public_path}"
-                print(
-                    f"A -> Public URL: {public_url} and bucket is {public_bucket}", file=sys.stderr
-                )
                 # Check if the file already exists in the S3 bucket
                 try:
                     s3_client.head_object(Bucket=public_bucket, Key=public_path)
                     # File exists, no need to re-upload
-                    link.href = public_url
-                    print(f"B -> File exists, no need to re-upload {public_url}", file=sys.stderr)
+                    new_link = pystac.Link(
+                        rel=link.rel,
+                        target=public_url,
+                        media_type=link.media_type,
+                        title=link.title,
+                    )
+                    collection.links.remove(link)
+                    collection.add_link(new_link)
+                    print(f"File exists, no need to re-upload {public_url}", file=sys.stderr)
                     continue
                 except ClientError:
                     # File does not exist, proceed with upload
                     print(
-                        f"C -> File does not exist, proceed with upload {public_url}",
+                        f"File does not exist, proceed with upload {public_url}",
                         file=sys.stderr,
                     )
                     pass
@@ -547,22 +552,19 @@ def handle_current_collection(
                     license_path = os.path.join("/tmp/outputs", license_href)
                     with open(license_path, "r") as file:
                         license_content = file.read()
-                    print(
-                        f"D -> License content(relative link): {license_content}", file=sys.stderr
-                    )
                 else:
                     # It's an external URL, download the file
-                    response = requests.get(license_href)
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+                    }
+                    response = requests.get(license_href, headers=headers)
                     response.raise_for_status()
                     license_content = response.text
-                    print(
-                        f"E -> License content(external link): {license_content}", file=sys.stderr
-                    )
 
                 # Sanitize the license file if it's HTML
                 if license_filename.endswith(".html"):
                     license_content = sanitizer.sanitize(license_content)
-                    print(f"F -> License content(sanitized): {license_content}", file=sys.stderr)
 
                 # Upload the license file to the public S3 bucket with correct content type
                 print(
@@ -576,10 +578,13 @@ def handle_current_collection(
                         "text/html" if license_filename.endswith(".html") else "text/plain"
                     ),
                 )
-                print(f"G -> License uploaded to {public_path}", file=sys.stderr)
+                print(f"License uploaded to {public_path}", file=sys.stderr)
                 # Update the license link to point to the new public URL
-                link.href = public_url
-                print(f"H -> License link updated to {public_url}", file=sys.stderr)
+                new_link = pystac.Link(
+                    rel=link.rel, target=public_url, media_type=link.media_type, title=link.title
+                )
+                collection.links.remove(link)
+                collection.add_link(new_link)
 
         for item in items:
             for index, link in enumerate(item.links):
