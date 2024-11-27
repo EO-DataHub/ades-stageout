@@ -1025,7 +1025,7 @@ def test_main_access_point_with_collection(
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
     mock_get_aws_client.return_value = mock_boto3_client_instance
-
+    mock_boto3_client_instance.head_object.return_value = None
     mock_link = mock.Mock(rel="root", href="./root-link")
 
     mock_item_1 = mock.Mock()
@@ -1131,6 +1131,7 @@ def test_main_access_point_with_collection(
         workflow_id,
         job_id,
     )
+    mock_boto3_client_instance.head_object.assert_called_once()
 
 
 @patch("builtins.open")

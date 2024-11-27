@@ -506,6 +506,9 @@ def handle_current_collection(
 
     cat.clear_children()
 
+    public_bucket = os.getenv("SPDX_S3_BUCKET")
+    hosted_zone = os.getenv("HOSTED_ZONE")
+
     for collection in collections:
         cat.add_child(collection)
 
@@ -515,14 +518,10 @@ def handle_current_collection(
         )
 
         # Check for license link
-        print(f"collection {collection.links}")
         for link in collection.links:
             if link.rel == "license":
                 license_href = link.href
                 license_filename = os.path.basename(license_href)
-                # public_bucket = "spdx-public-eodhp-dev"
-                public_bucket = os.getenv("SPDX_S3_BUCKET")
-                hosted_zone = os.getenv("HOSTED_ZONE")
                 public_path = f"api/catalogue/licences/{workspace}/{license_filename}"
                 public_url = f"https://{hosted_zone}/{public_path}"
                 # Check if the file already exists in the S3 bucket
@@ -537,7 +536,9 @@ def handle_current_collection(
                     )
                     collection.links.remove(link)
                     collection.add_link(new_link)
-                    print(f"File exists, no need to re-upload {public_url}", file=sys.stderr)
+                    print(
+                        f"Licence file exists, no need to re-upload {public_url}", file=sys.stderr
+                    )
                     continue
                 except ClientError:
                     # File does not exist, proceed with upload
@@ -554,6 +555,7 @@ def handle_current_collection(
                         license_content = file.read()
                 else:
                     # It's an external URL, download the file
+                    # Headers required to mimic a browser request and get around some sites blocking requests
                     headers = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                         "(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
@@ -568,7 +570,8 @@ def handle_current_collection(
 
                 # Upload the license file to the public S3 bucket with correct content type
                 print(
-                    f"public_path {public_path} and public_url {public_url} and bucket name {public_bucket}"
+                    f"Files to be uploaded at {public_url} and on bucket {public_bucket}",
+                    file=sys.stderr,
                 )
                 s3_client.put_object(
                     Bucket=public_bucket,
@@ -612,7 +615,6 @@ def handle_current_collection(
         collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
         print(f"Upload {collection.id}.json to {collection_href}", file=sys.stderr)
         pystac.write_file(collection, dest_href=collection_href)
-        print(f"I -> Collection uploaded to {collection_href}")
         files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection.id}.json")
 
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
