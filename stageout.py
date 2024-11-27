@@ -10,6 +10,9 @@ import boto3
 import botocore
 import pulsar
 import pystac
+import requests
+from botocore.exceptions import ClientError
+from html_sanitizer import Sanitizer
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from pystac.stac_io import DefaultStacIO, StacIO
@@ -499,17 +502,93 @@ def handle_current_collection(
         f"Normalising Catalog hrefs to https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}",
         file=sys.stderr,
     )
+    sanitizer = Sanitizer()
 
     cat.clear_children()
+
+    public_bucket = os.getenv("SPDX_S3_BUCKET")
+    hosted_zone = os.getenv("HOSTED_ZONE")
 
     for collection in collections:
         cat.add_child(collection)
 
         items = collection.get_items()
-
         collection.set_self_href(
             f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
         )
+
+        # Check for license link
+        for link in collection.links:
+            if link.rel == "license":
+                license_href = link.href
+                license_filename = os.path.basename(license_href)
+                public_path = f"api/catalogue/licences/{workspace}/{license_filename}"
+                public_url = f"https://{hosted_zone}/{public_path}"
+                # Check if the file already exists in the S3 bucket
+                try:
+                    s3_client.head_object(Bucket=public_bucket, Key=public_path)
+                    # File exists, no need to re-upload
+                    new_link = pystac.Link(
+                        rel=link.rel,
+                        target=public_url,
+                        media_type=link.media_type,
+                        title=link.title,
+                    )
+                    collection.links.remove(link)
+                    collection.add_link(new_link)
+                    print(
+                        f"Licence file exists, no need to re-upload {public_url}", file=sys.stderr
+                    )
+                    continue
+                except ClientError:
+                    # File does not exist, proceed with upload
+                    print(
+                        f"File does not exist, proceed with upload {public_url}",
+                        file=sys.stderr,
+                    )
+                    pass
+
+                if not license_href.startswith("http"):
+                    # It's a relative link, read the file
+                    license_path = os.path.join("/tmp/outputs", license_href)
+                    with open(license_path, "r") as file:
+                        license_content = file.read()
+                else:
+                    # It's an external URL, download the file
+                    # Headers required to mimic a browser request and get around some sites blocking requests
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+                    }
+                    response = requests.get(license_href, headers=headers)
+                    response.raise_for_status()
+                    license_content = response.text
+
+                # Sanitize the license file if it's HTML
+                if license_filename.endswith(".html"):
+                    license_content = sanitizer.sanitize(license_content)
+
+                # Upload the license file to the public S3 bucket with correct content type
+                print(
+                    f"Files to be uploaded at {public_url} and on bucket {public_bucket}",
+                    file=sys.stderr,
+                )
+                s3_client.put_object(
+                    Bucket=public_bucket,
+                    Key=public_path,
+                    Body=license_content,
+                    ContentType=(
+                        "text/html" if license_filename.endswith(".html") else "text/plain"
+                    ),
+                )
+                print(f"License uploaded to {public_path}", file=sys.stderr)
+                # Update the license link to point to the new public URL
+                new_link = pystac.Link(
+                    rel=link.rel, target=public_url, media_type=link.media_type, title=link.title
+                )
+                collection.links.remove(link)
+                collection.add_link(new_link)
+
         for item in items:
             for index, link in enumerate(item.links):
                 if link.rel == "root":
@@ -536,7 +615,6 @@ def handle_current_collection(
         collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
         print(f"Upload {collection.id}.json to {collection_href}", file=sys.stderr)
         pystac.write_file(collection, dest_href=collection_href)
-
         files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection.id}.json")
 
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")

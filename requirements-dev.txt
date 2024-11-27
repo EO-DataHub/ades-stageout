@@ -4,6 +4,8 @@
 #
 #    pip-compile --extra=dev --output-file=requirements-dev.txt
 #
+beautifulsoup4==4.12.3
+    # via html-sanitizer
 black==24.4.2
     # via eodhp-ades-stageout (pyproject.toml)
 boto3==1.34.152
@@ -38,6 +40,8 @@ filelock==3.15.4
     # via virtualenv
 google-auth==2.32.0
     # via kubernetes
+html-sanitizer==2.4.4
+    # via eodhp-ades-stageout (pyproject.toml)
 identify==2.6.0
     # via pre-commit
 idna==3.7
@@ -52,6 +56,12 @@ jmespath==1.0.1
     #   botocore
 kubernetes==30.1.0
     # via eodhp-ades-stageout (pyproject.toml)
+lxml==5.3.0
+    # via
+    #   html-sanitizer
+    #   lxml-html-clean
+lxml-html-clean==0.4.1
+    # via html-sanitizer
 mypy-extensions==1.0.0
     # via black
 nodeenv==1.9.1
@@ -127,6 +137,8 @@ six==1.16.0
     # via
     #   kubernetes
     #   python-dateutil
+soupsieve==2.6
+    # via beautifulsoup4
 urllib3==1.26.19
     # via
     #   botocore

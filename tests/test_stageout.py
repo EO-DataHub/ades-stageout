@@ -798,6 +798,8 @@ class Link:
     def __init__(self, rel, href):
         self.rel = rel
         self.href = href
+        self.media_type = "application/json"
+        self.title = "title"
 
 
 @patch.dict(
@@ -1023,7 +1025,7 @@ def test_main_access_point_with_collection(
     # Configure mocks
     mock_boto3_client_instance = mock.Mock()
     mock_get_aws_client.return_value = mock_boto3_client_instance
-
+    mock_boto3_client_instance.head_object.return_value = None
     mock_link = mock.Mock(rel="root", href="./root-link")
 
     mock_item_1 = mock.Mock()
@@ -1044,6 +1046,7 @@ def test_main_access_point_with_collection(
     )
     mock_collection.id = collection_id
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
+    mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
     mock_pystac_Collection.return_value = mock_collection
 
     mock_catalog = mock.Mock()
@@ -1128,6 +1131,7 @@ def test_main_access_point_with_collection(
         workflow_id,
         job_id,
     )
+    mock_boto3_client_instance.head_object.assert_called_once()
 
 
 @patch("builtins.open")
@@ -1547,6 +1551,7 @@ def test_handle_stac_outputs_with_collection_success(
     mock_item.get_assets.return_value = mock_assets_1
     mock_collection.get_items.return_value = [mock_item]
     mock_construct_collection.return_value = mock_collection
+    mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
 
     # Mock the pystac.read_file to return a mock catalog
     mock_catalog = mock.Mock()

@@ -69,7 +69,8 @@ dependencies = [
     "pystac",
     "boto3",
     "botocore",
-    "urllib3<1.27"
+    "urllib3<1.27",
+    "html-sanitizer"
 ]
 
 # List additional groups of dependencies here (e.g. development
