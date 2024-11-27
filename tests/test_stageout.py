@@ -844,7 +844,7 @@ def test_main_access_point_no_collection(
     job_id = "12345678"
     collection_id = f"col_{job_id}"
     cat_url = "test_catalog_url"
-    bucket = "test_bucket"
+    bucket = "bucket-name"
     subfolder = "test_subfolder"
     workspace = "test_workspace"
     workspace_domain = "test.workspace.domain.com"
@@ -883,7 +883,7 @@ def test_main_access_point_no_collection(
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
     mock_collection.get_self_href.return_value = (
-        f"s3://eodhp-dev-workspaces/{subfolder}/cat_{job_id}/{collection_id}.json"
+        f"s3://bucket-name/{subfolder}/cat_{job_id}/{collection_id}.json"
     )
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_pystac_Collection.return_value = mock_collection
@@ -916,7 +916,7 @@ def test_main_access_point_no_collection(
     )
 
     expected_s3_data = {
-        "s3_endpoint": "test-access-point/test-bucket",
+        "s3_endpoint": "bucket-name",
         "subfolder": subfolder,
         "workspace": "test_workspace",
         "workspace_domain": "test.workspace.domain.com",
@@ -1040,7 +1040,7 @@ def test_main_access_point_with_collection(
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
     mock_collection.get_self_href.return_value = (
-        f"s3://eodhp-dev-workspaces/{subfolder}/cat_{job_id}/{collection_id}.json"
+        f"s3://bucket-name/{subfolder}/cat_{job_id}/{collection_id}.json"
     )
     mock_collection.id = collection_id
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
