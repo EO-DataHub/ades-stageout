@@ -168,10 +168,16 @@ def test_custom_stac_write_text_workspace_url(mock_botocore_session_class, mock_
     mock_default_stacio.write_text.return_value = None
 
     # Configure expected arguments
-    expected_args = {
+    expected_args_1 = {
         "Body": "test_text".encode("UTF-8"),
         "Bucket": "bucket",
         "Key": "workspace/test_dest/path",
+        "ContentType": "application/geo+json",
+    }
+    expected_args_2 = {
+        "Body": "test_text".encode("UTF-8"),
+        "Bucket": "bucket",
+        "Key": "harvested/workspace/test_dest/path",
         "ContentType": "application/geo+json",
     }
 
@@ -191,8 +197,9 @@ def test_custom_stac_write_text_workspace_url(mock_botocore_session_class, mock_
     )
 
     # Assertions
-    assert mock_botocore_session_client.put_object.call_count == 1
-    mock_botocore_session_client.put_object.assert_called_once_with(**expected_args)
+    assert mock_botocore_session_client.put_object.call_count == 2
+    mock_botocore_session_client.put_object.assert_any_call(**expected_args_1)
+    mock_botocore_session_client.put_object.assert_any_call(**expected_args_2)
 
 
 @patch.dict(
@@ -738,12 +745,12 @@ def test_upload_items(mock_pystac_write_file):
     # Check result is not empty
     assert result
     assert result == [
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_item_1_href",
-        f"{workspace}/{subfolder}/{cat_id}/{collection_id}/test_item_2_href",
+        f"harvested/{workspace}/{subfolder}/{cat_id}/{collection_id}/test_item_1_href",
+        f"harvested/{workspace}/{subfolder}/{cat_id}/{collection_id}/test_item_2_href",
     ]
 
     # Check calls are as expected
-    assert mock_pystac_write_file.call_count == 2
+    assert mock_pystac_write_file.call_count == 4
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_item_1
     assert calls[0][1] == {
@@ -895,7 +902,7 @@ def test_main_access_point_no_collection(
 
     mock_construct_collection_and_upload_assets.return_value = mock_collection
 
-    mock_upload_items.return_value = ["test_item_1", "test_item_2"]
+    mock_upload_items.return_value = ["harvested/test_item_1", "harvested/test_item_2"]
 
     mock_send_to_ingester.return_value = None
 
@@ -948,10 +955,10 @@ def test_main_access_point_no_collection(
     # Check STAC call
     mock_send_to_ingester.assert_any_call(
         [
-            "test_item_1",
-            "test_item_2",
-            f"{workspace}/{subfolder}/cat_{job_id}.json",
-            f"{workspace}/{subfolder}/cat_{job_id}/collection.json",
+            "harvested/test_item_1",
+            "harvested/test_item_2",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}.json",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}/collection.json",
         ],
         bucket,
         "test_workspace",
@@ -1072,8 +1079,8 @@ def test_main_access_point_with_collection(
     mock_construct_collection_and_upload_assets.return_value = mock_collection
 
     mock_upload_items.return_value = [
-        f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
-        f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
+        f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
+        f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
     ]
 
     mock_send_to_ingester.return_value = None
@@ -1119,10 +1126,10 @@ def test_main_access_point_with_collection(
     assert mock_send_to_ingester.call_count == 1
     mock_send_to_ingester.assert_called_once_with(
         [
-            f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
-            f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
-            f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}.json",
-            f"{workspace}/{subfolder}/cat_{job_id}.json",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}.json",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}.json",
         ],
         bucket,
         "test_workspace",
@@ -1252,8 +1259,8 @@ def test_main_no_access_point(
     mock_construct_collection_and_upload_assets.return_value = mock_collection
 
     mock_upload_items.return_value = [
-        f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
-        f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
+        f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
+        f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
     ]
 
     mock_send_to_ingester.return_value = None
@@ -1306,10 +1313,10 @@ def test_main_no_access_point(
     assert mock_send_to_ingester.call_count == 1
     mock_send_to_ingester.assert_called_once_with(
         [
-            f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
-            f"{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
-            f"{workspace}/{subfolder}/cat_{job_id}.json",
-            f"{workspace}/{subfolder}/cat_{job_id}/collection.json",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_1",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}.json",
+            f"harvested/{workspace}/{subfolder}/cat_{job_id}/collection.json",
         ],
         "test_bucket",
         "test_workspace",
