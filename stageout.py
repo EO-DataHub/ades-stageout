@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from datetime import datetime
 from typing import List
 from urllib.parse import urlparse
@@ -47,11 +48,12 @@ class CustomStacIO(DefaultStacIO):
             # Output location is an S3 bucket - write directly to S3
             key = parsed.path[1:]
             print(f"Uploading to {key} at {self.s3_endpoint}", file=sys.stderr)
-            self.s3_client.put_object(
-                Body=txt.encode("UTF-8"),
-                Bucket=self.s3_endpoint,
-                Key=key,
-                ContentType="application/geo+json",
+            s3_put_object_and_await_avail(
+                s3_client=self.s3_client,
+                body=txt.encode("UTF-8"),
+                bucket=self.s3_endpoint,
+                key=key,
+                contentType="application/geo+json",
             )
         elif parsed.scheme == "https" and parsed.netloc == expected_workspace_url:
             # Output location is a link to workspace store - write directly to S3
@@ -60,23 +62,54 @@ class CustomStacIO(DefaultStacIO):
             key_suffix = "/".join(key_suffix)
             key = f"{self.workspace}/{key_suffix}"
             print(f"Uploading to {key} at {self.s3_endpoint}", file=sys.stderr)
-            self.s3_client.put_object(
-                Body=txt.encode("UTF-8"),
-                Bucket=self.s3_endpoint,
-                Key=key,
-                ContentType="application/geo+json",
+            s3_put_object_and_await_avail(
+                s3_client=self.s3_client,
+                body=txt.encode("UTF-8"),
+                bucket=self.s3_endpoint,
+                key=key,
+                contentType="application/geo+json",
             )
             # Second upload to work with transformer
             key = f"harvested/{self.workspace}/{key_suffix}"
-            self.s3_client.put_object(
-                Body=txt.encode("UTF-8"),
-                Bucket=self.s3_endpoint,
-                Key=key,
-                ContentType="application/geo+json",
+            s3_put_object_and_await_avail(
+                s3_client=self.s3_client,
+                body=txt.encode("UTF-8"),
+                bucket=self.s3_endpoint,
+                key=key,
+                contentType="application/geo+json",
             )
         else:
             # Output location is not within the workspace - use default write_text
             super().write_text(dest, txt, *args, **kwargs)
+
+
+def s3_put_object_and_await_avail(s3_client, body: str, bucket: str, key: str, contentType: str):
+    s3_client.put_object(
+        Body=body,
+        Bucket=bucket,
+        Key=key,
+        ContentType=contentType,
+    )
+    # Check data was correctly uploaded to S3
+    for _ in range(3):
+        try:
+            s3_client.get_object(Bucket=bucket, Key=key)
+            return
+        except ClientError:
+            time.sleep(5)
+    print("Object not available in S3, expect errors in harvest", file=sys.stderr)
+
+
+def s3_upload_file_and_await_avail(s3_client, path: str, bucket: str, key: str):
+    s3_client.upload_file(path, bucket, key)
+    # Check data was correctly uploaded to S3
+    for _ in range(3):
+        try:
+            s3_client.get_object(Bucket=bucket, Key=key)
+            return
+        except ClientError:
+            time.sleep(5)
+    print("Object not available in S3, expect errors in harvest", file=sys.stderr)
 
 
 def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
@@ -109,7 +142,7 @@ def upload_directory(s3_client: boto3.client, local_path: str, bucket: str, s3_p
         for file in files:
             upload_path_base = os.path.join(s3_path, base_path)
             upload_path = os.path.join(upload_path_base, file)
-            s3_client.upload_file(os.path.join(root, file), bucket, upload_path)
+            s3_upload_file_and_await_avail(s3_client, os.path.join(root, file), bucket, upload_path)
 
 
 def get_current_namespace():
@@ -195,7 +228,8 @@ def handle_assets(
             file=sys.stderr,
         )
         try:
-            s3_client.upload_file(
+            s3_upload_file_and_await_avail(
+                s3_client,
                 asset.get_absolute_href(),
                 s3_endpoint,
                 s3_path,
@@ -410,7 +444,8 @@ def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file
     # Upload annotations to S3
     print(f"Uploading annotations to {s3_path}", file=sys.stderr)
     try:
-        s3_client.upload_file(
+        s3_upload_file_and_await_avail(
+            s3_client,
             os.path.join("/tmp/outputs", file_name),
             s3_endpoint,
             s3_path,
@@ -594,11 +629,12 @@ def handle_current_collection(
                     f"Files to be uploaded at {public_url} and on bucket {public_bucket}",
                     file=sys.stderr,
                 )
-                s3_client.put_object(
-                    Bucket=public_bucket,
-                    Key=public_path,
-                    Body=license_content,
-                    ContentType=(
+                s3_put_object_and_await_avail(
+                    s3_client=s3_client,
+                    body=license_content,
+                    bucket=public_bucket,
+                    key=public_path,
+                    contentType=(
                         "text/html" if license_filename.endswith(".html") else "text/plain"
                     ),
                 )
