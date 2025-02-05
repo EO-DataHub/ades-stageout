@@ -1721,9 +1721,7 @@ def test_create_workflow_catalog_error(mock_write_file):
     # Configure mocks
     mock_write_file.return_value = None
     s3_client = mock.Mock()
-    error_response = {
-        "Error": {"Code": "NoSuchKey", "Message": "The specified key does not exist."}
-    }
+    error_response = {"Error": {"Code": "NoSuchKey", "Message": "Some boto3 exception."}}
     client_error = ClientError(error_response, "head_object")
     s3_client.head_object.side_effect = client_error
     result = create_workflow_catalog(
