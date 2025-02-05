@@ -26,7 +26,11 @@ class CustomStacIO(DefaultStacIO):
         self.s3_endpoint = s3_endpoint
         self.workspace = workspace
         self.workspace_domain = workspace_domain
-        if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+        if (
+            os.getenv("AWS_ACCESS_KEY_ID")
+            and os.getenv("AWS_SECRET_ACCESS_KEY")
+            and os.getenv("AWS_SESSION_TOKEN")
+        ):
             self.s3_client = self.session.create_client(
                 service_name="s3",
                 use_ssl=True,
@@ -82,7 +86,11 @@ class CustomStacIO(DefaultStacIO):
 
 def get_aws_client() -> boto3.client:
     # Configure AWS client
-    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+    if (
+        os.getenv("AWS_ACCESS_KEY_ID")
+        and os.getenv("AWS_SECRET_ACCESS_KEY")
+        and os.getenv("AWS_SESSION_TOKEN")
+    ):
         s3_client = boto3.client(
             service_name="s3",
             use_ssl=True,
