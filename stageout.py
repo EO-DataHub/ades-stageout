@@ -744,6 +744,4 @@ if __name__ == "__main__":
     job_id = sys.argv[4]
     workflow_id = sys.argv[5]
 
-
-
     main(cat_url, bucket, subfolder, job_id, workflow_id)
