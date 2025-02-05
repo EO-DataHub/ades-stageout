@@ -30,6 +30,7 @@ from stageout import (
         "WORKSPACE_DOMAIN": "mock_domain",
         "AWS_ACCESS_KEY_ID": "mock_access_key",
         "AWS_SECRET_ACCESS_KEY": "mock_secret_key",
+        "AWS_SESSION_TOKEN": "valid-token",
     },
 )
 @patch("botocore.session.Session")
@@ -51,6 +52,7 @@ def test_custom_stac_init_env_var(mock_botocore_session_class):
         "aws_secret_access_key": "mock_secret_key",
         "endpoint_url": "mock_endpoint",
         "region_name": "mock_region",
+        "aws_session_token": "valid-token",
     }
 
     # Instantiate CustomStacIO
@@ -760,7 +762,13 @@ def test_upload_items(mock_pystac_write_file):
 
 @patch.dict(
     os.environ,
-    {"AWS_ACCESS_KEY_ID": "test_access_key", "AWS_SECRET_ACCESS_KEY": "test_secret_key"},
+    {
+        "AWS_ACCESS_KEY_ID": "test_access_key",
+        "AWS_SECRET_ACCESS_KEY": "test_secret_key",
+        "AWS_REGION": "test-region",
+        "AWS_S3_ENDPOINT": "test-endpoint",
+        "AWS_SESSION_TOKEN": "valid-token",
+    },
 )
 @patch("boto3.client")
 def test_get_aws_client_with_credentials(mock_boto3_client):
@@ -769,22 +777,27 @@ def test_get_aws_client_with_credentials(mock_boto3_client):
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
 
-    result = get_aws_client("test_endpoint", "test-region")
+    result = get_aws_client()
 
     # Check client is created
     assert result == "example_s3_client"
 
     # Check calls are as expected
     mock_boto3_client.assert_called_once_with(
-        "s3",
+        service_name="s3",
+        use_ssl=True,
         aws_access_key_id="test_access_key",
         aws_secret_access_key="test_secret_key",
-        endpoint_url="test_endpoint",
+        endpoint_url="test-endpoint",
         region_name="test-region",
+        aws_session_token="valid-token",
     )
 
 
-@patch.dict(os.environ, {}, clear=True)
+@patch.dict(
+    os.environ,
+    {"AWS_REGION": "test-region", "AWS_S3_ENDPOINT": "test-endpoint"},
+)
 @patch("boto3.client")
 def test_get_aws_client_no_credentials(mock_boto3_client):
     """Test get_aws_client function without provided AWS credentials, instead using service account"""
@@ -792,7 +805,7 @@ def test_get_aws_client_no_credentials(mock_boto3_client):
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
 
-    result = get_aws_client("test_endpoint", "test-region")
+    result = get_aws_client()
 
     # Check client is created
     assert result == "example_s3_client"
