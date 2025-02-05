@@ -357,6 +357,7 @@ def test_send_to_ingester(mock_pulsar_client):
     test_workspace = "test_workspace"
     topic = "harvested-test"
     name = "test_producer"
+    subfolder = "results/workflow-id"
 
     expected_message = {
         "id": f"{name}/{test_workspace}",
@@ -367,14 +368,21 @@ def test_send_to_ingester(mock_pulsar_client):
         "updated_keys": [],
         "added_keys": test_harvest_list,
         "deleted_keys": [],
-        "source": test_workspace,
-        "target": f"user-datasets/{test_workspace}",
+        "source": f"{test_workspace}/{subfolder}",
+        "target": f"user-datasets/{test_workspace}/{subfolder}",
         "job_id": "jobID",
         "workflow_id": "workflowID",
     }
 
     send_to_ingester(
-        test_harvest_list, test_bucket, test_workspace, topic, name, "jobID", "workflowID"
+        test_harvest_list,
+        test_bucket,
+        test_workspace,
+        subfolder,
+        topic,
+        name,
+        "jobID",
+        "workflowID",
     )
 
     # Check calls are as expected
@@ -965,6 +973,7 @@ def test_main_access_point_no_collection(
         ],
         bucket,
         "test_workspace",
+        subfolder,
         topic,
         name,
         job_id,
@@ -977,6 +986,7 @@ def test_main_access_point_no_collection(
         ],
         bucket,
         "test_workspace",
+        subfolder,
         "harvested-annotations",
         "ades-outputs-annotations",
         job_id,
@@ -1137,6 +1147,7 @@ def test_main_access_point_with_collection(
         ],
         bucket,
         "test_workspace",
+        subfolder,
         "harvested",
         "ades-outputs-stac",
         workflow_id,
@@ -1325,6 +1336,7 @@ def test_main_no_access_point(
         ],
         "test_bucket",
         "test_workspace",
+        subfolder,
         topic,
         name,
         job_id,
@@ -1423,6 +1435,7 @@ def test_handle_annotations_success(mock_os_listdir, mock_send_to_ingester, mock
         added_annotations,
         bucket,
         workspace,
+        subfolder,
         "harvested-annotations",
         "ades-outputs-annotations",
         job_id,
@@ -1662,9 +1675,7 @@ def test_create_workflow_catalog(mock_write_file):
     # Configure mocks
     mock_write_file.return_value = None
     s3_client = mock.Mock()
-    error_response = {
-        "Error": {"Code": "NoSuchKey", "Message": "The specified key does not exist."}
-    }
+    error_response = {"Error": {"Code": "404", "Message": "The specified key does not exist."}}
     client_error = ClientError(error_response, "head_object")
     s3_client.head_object.side_effect = client_error
     result = create_workflow_catalog(
@@ -1684,3 +1695,45 @@ def test_create_workflow_catalog(mock_write_file):
     assert call_args[1] == {
         "dest_href": "https://workspace.workspace.domain.com/files/bucket/processing-results/test-workflow.json"
     }
+
+
+@patch("pystac.write_file")
+def test_create_workflow_catalog_already_present(mock_write_file):
+    # Configure mocks
+    mock_write_file.return_value = None
+    s3_client = mock.Mock()
+    s3_client.head_object.return_value = "some-file-data"
+    result = create_workflow_catalog(
+        s3_client,
+        "test-workflow",
+        "processing-results/test-workflow",
+        "workspace",
+        "workspace.domain.com",
+        "bucket",
+    )
+
+    assert result == "harvested/workspace/processing-results/test-workflow.json"
+    mock_write_file.assert_not_called()
+
+
+@patch("pystac.write_file")
+def test_create_workflow_catalog_error(mock_write_file):
+    # Configure mocks
+    mock_write_file.return_value = None
+    s3_client = mock.Mock()
+    error_response = {
+        "Error": {"Code": "NoSuchKey", "Message": "The specified key does not exist."}
+    }
+    client_error = ClientError(error_response, "head_object")
+    s3_client.head_object.side_effect = client_error
+    result = create_workflow_catalog(
+        s3_client,
+        "test-workflow",
+        "processing-results/test-workflow",
+        "workspace",
+        "workspace.domain.com",
+        "bucket",
+    )
+
+    assert not result
+    mock_write_file.assert_not_called()
