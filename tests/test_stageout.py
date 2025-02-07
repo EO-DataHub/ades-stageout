@@ -4,11 +4,13 @@ from unittest import mock
 from unittest.mock import mock_open, patch
 
 import pystac
+from botocore.exceptions import ClientError
 from kubernetes.client.rest import ApiException
 
 from stageout import (
     CustomStacIO,
     construct_collection_and_upload_assets,
+    create_workflow_catalog,
     get_aws_client,
     get_bucket_from_namespace,
     get_current_namespace,
@@ -355,6 +357,7 @@ def test_send_to_ingester(mock_pulsar_client):
     test_workspace = "test_workspace"
     topic = "harvested-test"
     name = "test_producer"
+    subfolder = "results/workflow-id"
 
     expected_message = {
         "id": f"{name}/{test_workspace}",
@@ -365,14 +368,21 @@ def test_send_to_ingester(mock_pulsar_client):
         "updated_keys": [],
         "added_keys": test_harvest_list,
         "deleted_keys": [],
-        "source": test_workspace,
-        "target": f"user-datasets/{test_workspace}",
+        "source": f"{test_workspace}/{subfolder}",
+        "target": f"user-datasets/{test_workspace}/{subfolder}",
         "job_id": "jobID",
         "workflow_id": "workflowID",
     }
 
     send_to_ingester(
-        test_harvest_list, test_bucket, test_workspace, topic, name, "jobID", "workflowID"
+        test_harvest_list,
+        test_bucket,
+        test_workspace,
+        subfolder,
+        topic,
+        name,
+        "jobID",
+        "workflowID",
     )
 
     # Check calls are as expected
@@ -959,9 +969,11 @@ def test_main_access_point_no_collection(
             "harvested/test_item_2",
             f"harvested/{workspace}/{subfolder}/cat_{job_id}.json",
             f"harvested/{workspace}/{subfolder}/cat_{job_id}/collection.json",
+            f"harvested/{workspace}/{subfolder}.json",
         ],
         bucket,
         "test_workspace",
+        subfolder,
         topic,
         name,
         job_id,
@@ -974,6 +986,7 @@ def test_main_access_point_no_collection(
         ],
         bucket,
         "test_workspace",
+        subfolder,
         "harvested-annotations",
         "ades-outputs-annotations",
         job_id,
@@ -1130,15 +1143,17 @@ def test_main_access_point_with_collection(
             f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
             f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}.json",
             f"harvested/{workspace}/{subfolder}/cat_{job_id}.json",
+            f"harvested/{workspace}/{subfolder}.json",
         ],
         bucket,
         "test_workspace",
+        subfolder,
         "harvested",
         "ades-outputs-stac",
         workflow_id,
         job_id,
     )
-    mock_boto3_client_instance.head_object.assert_called_once()
+    assert mock_boto3_client_instance.head_object.call_count == 2
 
 
 @patch("builtins.open")
@@ -1317,9 +1332,11 @@ def test_main_no_access_point(
             f"harvested/{workspace}/{subfolder}/cat_{job_id}/{collection_id}/test_item_2",
             f"harvested/{workspace}/{subfolder}/cat_{job_id}.json",
             f"harvested/{workspace}/{subfolder}/cat_{job_id}/collection.json",
+            f"harvested/{workspace}/{subfolder}.json",
         ],
         "test_bucket",
         "test_workspace",
+        subfolder,
         topic,
         name,
         job_id,
@@ -1418,6 +1435,7 @@ def test_handle_annotations_success(mock_os_listdir, mock_send_to_ingester, mock
         added_annotations,
         bucket,
         workspace,
+        subfolder,
         "harvested-annotations",
         "ades-outputs-annotations",
         job_id,
@@ -1650,3 +1668,70 @@ def test_handle_stac_outputs_stac_type_error(mock_read_file):
     )
     assert not result
     mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+
+
+@patch("pystac.write_file")
+def test_create_workflow_catalog(mock_write_file):
+    # Configure mocks
+    mock_write_file.return_value = None
+    s3_client = mock.Mock()
+    error_response = {"Error": {"Code": "404", "Message": "The specified key does not exist."}}
+    client_error = ClientError(error_response, "head_object")
+    s3_client.head_object.side_effect = client_error
+    result = create_workflow_catalog(
+        s3_client,
+        "test-workflow",
+        "processing-results/test-workflow",
+        "workspace",
+        "workspace.domain.com",
+        "bucket",
+    )
+
+    assert result == "harvested/workspace/processing-results/test-workflow.json"
+    mock_write_file.assert_called_once()
+
+    call_args = mock_write_file.call_args_list[0]
+    assert isinstance(call_args[0][0], pystac.catalog.Catalog)
+    assert call_args[1] == {
+        "dest_href": "https://workspace.workspace.domain.com/files/bucket/processing-results/test-workflow.json"
+    }
+
+
+@patch("pystac.write_file")
+def test_create_workflow_catalog_already_present(mock_write_file):
+    # Configure mocks
+    mock_write_file.return_value = None
+    s3_client = mock.Mock()
+    s3_client.head_object.return_value = "some-file-data"
+    result = create_workflow_catalog(
+        s3_client,
+        "test-workflow",
+        "processing-results/test-workflow",
+        "workspace",
+        "workspace.domain.com",
+        "bucket",
+    )
+
+    assert result == "harvested/workspace/processing-results/test-workflow.json"
+    mock_write_file.assert_not_called()
+
+
+@patch("pystac.write_file")
+def test_create_workflow_catalog_error(mock_write_file):
+    # Configure mocks
+    mock_write_file.return_value = None
+    s3_client = mock.Mock()
+    error_response = {"Error": {"Code": "NoSuchKey", "Message": "Some boto3 exception."}}
+    client_error = ClientError(error_response, "head_object")
+    s3_client.head_object.side_effect = client_error
+    result = create_workflow_catalog(
+        s3_client,
+        "test-workflow",
+        "processing-results/test-workflow",
+        "workspace",
+        "workspace.domain.com",
+        "bucket",
+    )
+
+    assert not result
+    mock_write_file.assert_not_called()
