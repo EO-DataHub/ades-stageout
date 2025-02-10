@@ -4,6 +4,7 @@ from unittest import mock
 from unittest.mock import mock_open, patch
 
 import pystac
+import pytest
 from botocore.exceptions import ClientError
 from kubernetes.client.rest import ApiException
 
@@ -24,19 +25,26 @@ from stageout import (
 )
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_REGION": "mock_region",
-        "AWS_S3_ENDPOINT": "mock_endpoint",
-        "WORKSPACE_DOMAIN": "mock_domain",
-        "AWS_ACCESS_KEY_ID": "mock_access_key",
-        "AWS_SECRET_ACCESS_KEY": "mock_secret_key",
-    },
-)
+@pytest.fixture()
+def setenvvar(monkeypatch):
+    with mock.patch.dict(os.environ, clear=True):
+        envvars = {
+            "AWS_REGION": "mock_region",
+            "AWS_S3_ENDPOINT": "mock_endpoint",
+            "WORKSPACE_DOMAIN": "test.workspace.domain.com",
+            "AWS_ACCESS_KEY_ID": "mock_access_key",
+            "AWS_SECRET_ACCESS_KEY": "mock_secret_key",
+            "AWS_SESSION_TOKEN": "valid-token",
+            "WORKSPACE": "test_workspace",
+        }
+        for k, v in envvars.items():
+            monkeypatch.setenv(k, v)
+        yield
+
+
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_init_env_var(mock_botocore_session_class):
+def test_custom_stac_init_env_var(mock_botocore_session_class, setenvvar):
     """Test the CustomStacIO class given provided environment variables for AWS credentials"""
 
     # Create mocks
@@ -53,6 +61,7 @@ def test_custom_stac_init_env_var(mock_botocore_session_class):
         "aws_secret_access_key": "mock_secret_key",
         "endpoint_url": "mock_endpoint",
         "region_name": "mock_region",
+        "aws_session_token": "valid-token",
     }
 
     # Instantiate CustomStacIO
@@ -66,19 +75,9 @@ def test_custom_stac_init_env_var(mock_botocore_session_class):
     assert test_stac_io.s3_client == mock_botocore_session_client
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_REGION": "mock_region",
-        "AWS_S3_ENDPOINT": "mock_endpoint",
-        "WORKSPACE_DOMAIN": "mock_domain",
-        "AWS_ACCESS_KEY_ID": "",
-        "AWS_SECRET_ACCESS_KEY": "",
-    },
-)
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
 @patch("botocore.session.Session")
-def test_custom_stac_init_service_account(mock_botocore_session_class):
+def test_custom_stac_init_service_account(mock_botocore_session_class, setenvvar):
     """Test the CustomStacIO class without provided environment variables for AWS credentials,
     instead using current service account"""
 
@@ -89,33 +88,31 @@ def test_custom_stac_init_service_account(mock_botocore_session_class):
     mock_botocore_session_class.return_value = mock_botocore_session
 
     # Configure expected arguments
-    expected_args = "s3"
+    expected_args = {
+        "service_name": "s3",
+        "use_ssl": True,
+        "aws_access_key_id": "mock_access_key",
+        "aws_secret_access_key": "mock_secret_key",
+        "endpoint_url": "mock_endpoint",
+        "region_name": "mock_region",
+        "aws_session_token": "valid-token",
+    }
 
     # Instantiate CustomStacIO
     test_stac_io = CustomStacIO()
 
     # Assertions
     assert mock_botocore_session.create_client.call_count == 1
-    mock_botocore_session.create_client.assert_called_once_with(expected_args)
+    mock_botocore_session.create_client.assert_called_once_with(**expected_args)
 
     # Check resulting s3_client
     assert test_stac_io.s3_client == mock_botocore_session_client
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_REGION": "mock_region",
-        "AWS_S3_ENDPOINT": "mock_endpoint",
-        "WORKSPACE_DOMAIN": "mock_domain",
-        "AWS_ACCESS_KEY_ID": "",
-        "AWS_SECRET_ACCESS_KEY": "",
-    },
-)
 @patch("pystac.stac_io.DefaultStacIO")
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_stacio):
+def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_stacio, setenvvar):
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -146,20 +143,12 @@ def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_sta
     mock_botocore_session_client.put_object.assert_called_once_with(**expected_args)
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_REGION": "mock_region",
-        "AWS_S3_ENDPOINT": "mock_endpoint",
-        "WORKSPACE_DOMAIN": "mock_domain",
-        "AWS_ACCESS_KEY_ID": "",
-        "AWS_SECRET_ACCESS_KEY": "",
-    },
-)
 @patch("pystac.stac_io.DefaultStacIO")
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_write_text_workspace_url(mock_botocore_session_class, mock_default_stacio):
+def test_custom_stac_write_text_workspace_url(
+    mock_botocore_session_class, mock_default_stacio, setenvvar
+):
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -204,20 +193,12 @@ def test_custom_stac_write_text_workspace_url(mock_botocore_session_class, mock_
     mock_botocore_session_client.put_object.assert_any_call(**expected_args_2)
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_REGION": "mock_region",
-        "AWS_S3_ENDPOINT": "mock_endpoint",
-        "WORKSPACE_DOMAIN": "mock_domain",
-        "AWS_ACCESS_KEY_ID": "",
-        "AWS_SECRET_ACCESS_KEY": "",
-    },
-)
 @patch("pystac.stac_io.DefaultStacIO.write_text")
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_write_text_super(mock_botocore_session_class, mock_default_stacio_write_text):
+def test_custom_stac_write_text_super(
+    mock_botocore_session_class, mock_default_stacio_write_text, setenvvar
+):
     """Test the CustomStacIO write text function with super call, not using S3"""
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -768,33 +749,34 @@ def test_upload_items(mock_pystac_write_file):
     }
 
 
-@patch.dict(
-    os.environ,
-    {"AWS_ACCESS_KEY_ID": "test_access_key", "AWS_SECRET_ACCESS_KEY": "test_secret_key"},
-)
 @patch("boto3.client")
-def test_get_aws_client_with_credentials(mock_boto3_client):
+def test_get_aws_client_with_credentials(mock_boto3_client, setenvvar):
     """Test get_aws_client function with provided AWS credentials"""
 
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
 
-    result = get_aws_client("test_endpoint", "test-region")
+    result = get_aws_client()
 
     # Check client is created
     assert result == "example_s3_client"
 
     # Check calls are as expected
     mock_boto3_client.assert_called_once_with(
-        "s3",
-        aws_access_key_id="test_access_key",
-        aws_secret_access_key="test_secret_key",
-        endpoint_url="test_endpoint",
-        region_name="test-region",
+        service_name="s3",
+        use_ssl=True,
+        aws_access_key_id="mock_access_key",
+        aws_secret_access_key="mock_secret_key",
+        endpoint_url="mock_endpoint",
+        region_name="mock_region",
+        aws_session_token="valid-token",
     )
 
 
-@patch.dict(os.environ, {}, clear=True)
+@patch.dict(
+    os.environ,
+    {"AWS_REGION": "test-region", "AWS_S3_ENDPOINT": "test-endpoint"},
+)
 @patch("boto3.client")
 def test_get_aws_client_no_credentials(mock_boto3_client):
     """Test get_aws_client function without provided AWS credentials, instead using service account"""
@@ -802,7 +784,7 @@ def test_get_aws_client_no_credentials(mock_boto3_client):
     # Configure mocks
     mock_boto3_client.return_value = "example_s3_client"
 
-    result = get_aws_client("test_endpoint", "test-region")
+    result = get_aws_client()
 
     # Check client is created
     assert result == "example_s3_client"
@@ -819,18 +801,6 @@ class Link:
         self.title = "title"
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_ACCESS_KEY_ID": "",
-        "AWS_SECRET_ACCESS_KEY": "",
-        "WORKSPACE": "test_workspace",
-        "endpoint_url": "s3://test-endpoint",
-        "AWS_REGION": "test_region",
-        "AWS_S3_ENDPOINT": "s3://test-endpoint/path",
-        "WORKSPACE_DOMAIN": "test.workspace.domain.com",
-    },
-)
 @patch("builtins.open", new_callable=mock_open, read_data='{"valid": "json"}')
 @patch("os.listdir")
 @patch("stageout.get_aws_client")
@@ -856,6 +826,7 @@ def test_main_access_point_no_collection(
     mock_get_aws_client,
     mock_os_listdir,
     mock_open,
+    setenvvar,
 ):
     """Test main function with no AWS credentials, instead using access point"""
 
@@ -994,18 +965,6 @@ def test_main_access_point_no_collection(
     )
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_ACCESS_KEY_ID": "",
-        "AWS_SECRET_ACCESS_KEY": "",
-        "WORKSPACE": "test_workspace",
-        "endpoint_url": "s3://test-endpoint",
-        "AWS_REGION": "test_region",
-        "AWS_S3_ENDPOINT": "s3://test-endpoint/path",
-        "WORKSPACE_DOMAIN": "test.workspace.domain.com",
-    },
-)
 @patch("os.listdir")
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
@@ -1029,6 +988,7 @@ def test_main_access_point_with_collection(
     mock_send_to_ingester,
     mock_get_aws_client,
     mock_os_listdir,
+    setenvvar,
 ):
     """Test main function with no AWS credentials, instead using access point"""
 
@@ -1181,18 +1141,6 @@ def test_get_current_namespace_error(mock_open):
     assert result == "default"
 
 
-@patch.dict(
-    os.environ,
-    {
-        "AWS_ACCESS_KEY_ID": "",
-        "AWS_SECRET_ACCESS_KEY": "",
-        "WORKSPACE": "test_workspace",
-        "endpoint_url": "s3://test-endpoint",
-        "AWS_REGION": "test_region",
-        "AWS_S3_ENDPOINT": "s3://test-endpoint/path",
-        "WORKSPACE_DOMAIN": "test.workspace.domain.com",
-    },
-)
 @patch("os.listdir")
 @patch("stageout.get_aws_client")
 @patch("stageout.send_to_ingester")
@@ -1216,6 +1164,7 @@ def test_main_no_access_point(
     mock_send_to_ingester,
     mock_get_aws_client,
     mock_os_listdir,
+    setenvvar,
 ):
     """Test main function with AWS credentials"""
 

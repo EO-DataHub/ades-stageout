@@ -26,14 +26,19 @@ class CustomStacIO(DefaultStacIO):
         self.s3_endpoint = s3_endpoint
         self.workspace = workspace
         self.workspace_domain = workspace_domain
-        if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+        if (
+            os.getenv("AWS_ACCESS_KEY_ID")
+            and os.getenv("AWS_SECRET_ACCESS_KEY")
+            and os.getenv("AWS_SESSION_TOKEN")
+        ):
             self.s3_client = self.session.create_client(
                 service_name="s3",
                 use_ssl=True,
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
                 endpoint_url=os.environ["AWS_S3_ENDPOINT"],
                 region_name=os.environ["AWS_REGION"],
+                aws_session_token=os.environ.get("AWS_SESSION_TOKEN"),
             )
         else:
             self.s3_client = self.session.create_client("s3")
@@ -79,23 +84,24 @@ class CustomStacIO(DefaultStacIO):
             super().write_text(dest, txt, *args, **kwargs)
 
 
-def get_aws_client(endpoint_url: str, region_name: str) -> boto3.client:
+def get_aws_client() -> boto3.client:
     # Configure AWS client
-    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+    if (
+        os.getenv("AWS_ACCESS_KEY_ID")
+        and os.getenv("AWS_SECRET_ACCESS_KEY")
+        and os.getenv("AWS_SESSION_TOKEN")
+    ):
         s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            endpoint_url=endpoint_url,
-            region_name=region_name,
+            service_name="s3",
+            use_ssl=True,
+            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+            endpoint_url=os.environ["AWS_S3_ENDPOINT"],
+            region_name=os.environ["AWS_REGION"],
+            aws_session_token=os.environ.get("AWS_SESSION_TOKEN"),
         )
     else:
-        try:
-            # First uses credentials file, then service account
-            s3_client = boto3.client("s3")
-        except Exception as e:
-            print(f"Failed to configure AWS client: {e}", file=sys.stderr)
-            raise
+        s3_client = boto3.client("s3")
     return s3_client
 
 
@@ -502,8 +508,6 @@ def handle_annotations(
 
 def main(cat_url, bucket, subfolder, job_id, workflow_id):
 
-    region_name = os.environ["AWS_REGION"]
-    endpoint_url = os.environ["AWS_S3_ENDPOINT"]
     s3_endpoint = bucket
     workspace_domain = os.environ["WORKSPACE_DOMAIN"]
     workspace = os.environ["WORKSPACE"]
@@ -515,7 +519,7 @@ def main(cat_url, bucket, subfolder, job_id, workflow_id):
         raise
 
     # Create S3 client
-    s3_client = get_aws_client(endpoint_url, region_name)
+    s3_client = get_aws_client()
 
     # Set custom STAC IO
     def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
