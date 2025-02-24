@@ -340,6 +340,8 @@ def test_send_to_ingester(mock_pulsar_client):
     name = "test_producer"
     subfolder = "results/workflow-id"
 
+    expected_output_root = os.getenv("OUTPUT_ROOT", "user")
+
     expected_message = {
         "id": f"{name}/{test_workspace}",
         "workspace": test_workspace,
@@ -350,7 +352,7 @@ def test_send_to_ingester(mock_pulsar_client):
         "added_keys": test_harvest_list,
         "deleted_keys": [],
         "source": f"{test_workspace}/{subfolder}",
-        "target": f"user-datasets/{test_workspace}/{subfolder}",
+        "target": f"{expected_output_root}/{test_workspace}/{subfolder}",
         "job_id": "jobID",
         "workflow_id": "workflowID",
     }
