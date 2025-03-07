@@ -511,6 +511,7 @@ def main(cat_url, bucket, subfolder, job_id, workflow_id):
     s3_endpoint = bucket
     workspace_domain = os.environ["WORKSPACE_DOMAIN"]
     workspace = os.environ["WORKSPACE"]
+    executing_workspace = os.environ["EXECUTING_WORKSPACE"]
 
     try:
         shutil.copytree(cat_url, "/tmp/outputs")
@@ -533,7 +534,15 @@ def main(cat_url, bucket, subfolder, job_id, workflow_id):
     StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
 
     catalog_created = handle_stac_outputs(
-        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
+        s3_client,
+        s3_endpoint,
+        workspace_domain,
+        workspace,
+        executing_workspace,
+        bucket,
+        subfolder,
+        job_id,
+        workflow_id,
     )
 
     annotations_created = handle_annotations(
@@ -711,6 +720,7 @@ def handle_stac_outputs(
     s3_endpoint,
     workspace_domain,
     workspace,
+    executing_workspace,
     bucket,
     subfolder,
     job_id,
@@ -727,7 +737,10 @@ def handle_stac_outputs(
         return False
 
     # Create new catalog id
-    cat.id = f"cat_{job_id}"
+    if executing_workspace in ["airbus", "planet"]:
+        cat.id = executing_workspace
+    else:
+        cat.id = f"cat_{job_id}"
     cat_id = cat.id
 
     # Create new collection id

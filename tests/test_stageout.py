@@ -36,6 +36,7 @@ def setenvvar(monkeypatch):
             "AWS_SECRET_ACCESS_KEY": "mock_secret_key",
             "AWS_SESSION_TOKEN": "valid-token",
             "WORKSPACE": "test_workspace",
+            "EXECUTING_WORKSPACE": "test_workspace",
         }
         for k, v in envvars.items():
             monkeypatch.setenv(k, v)
@@ -1435,6 +1436,7 @@ def test_handle_stac_outputs_no_collection_success(
     s3_endpoint = "s3_endpoint"
     workspace_domain = "workspace_domain"
     workspace = "workspace"
+    executing_workspace = "workspace"
     bucket = "bucket"
     subfolder = "subfolder"
     job_id = "job_id"
@@ -1469,6 +1471,7 @@ def test_handle_stac_outputs_no_collection_success(
         s3_endpoint,
         workspace_domain,
         workspace,
+        executing_workspace,
         bucket,
         subfolder,
         job_id,
@@ -1508,6 +1511,7 @@ def test_handle_stac_outputs_with_collection_success(
     s3_endpoint = "s3_endpoint"
     workspace_domain = "workspace_domain"
     workspace = "workspace"
+    executing_workspace = "workspace"
     bucket = "bucket"
     subfolder = "subfolder"
     job_id = "1234-5678"
@@ -1524,6 +1528,7 @@ def test_handle_stac_outputs_with_collection_success(
     mock_item.links = [Link("self", "test_self_href")]
     mock_item.get_assets.return_value = mock_assets_1
     mock_collection.get_items.return_value = [mock_item]
+    mock_collection.id = "test_collection"
     mock_construct_collection.return_value = mock_collection
     mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
 
@@ -1549,6 +1554,7 @@ def test_handle_stac_outputs_with_collection_success(
         s3_endpoint,
         workspace_domain,
         workspace,
+        executing_workspace,
         bucket,
         subfolder,
         job_id,
@@ -1556,13 +1562,96 @@ def test_handle_stac_outputs_with_collection_success(
     )
     assert result
     mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
-    # mock_write_file.assert_any_call(
-    #     mock_collection,
-    #     dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}/collection.json",
-    # )
+    mock_write_file.assert_any_call(
+        mock_collection,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}/test_collection.json",
+    )
     mock_write_file.assert_any_call(
         mock_catalog,
         dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/cat_{job_id}.json",
+    )
+    mock_send_to_ingester.assert_called_once()
+
+
+@patch("pystac.read_file")
+@patch("os.path.join")
+@patch("stageout.CustomStacIO")
+@patch("stageout.construct_collection_and_upload_assets")
+@patch("stageout.upload_items")
+@patch("stageout.send_to_ingester")
+@patch("pystac.write_file")
+def test_handle_adaptor_stac_outputs_with_collection_success(
+    mock_write_file,
+    mock_send_to_ingester,
+    mock_upload_items,
+    mock_construct_collection,
+    mock_CustomStacIO,
+    mock_os_path_join,
+    mock_read_file,
+):
+    # Configure mocks
+    s3_client = mock.Mock()
+    s3_endpoint = "s3_endpoint"
+    workspace_domain = "workspace_domain"
+    workspace = "workspace"
+    executing_workspace = "airbus"
+    bucket = "bucket"
+    subfolder = "subfolder"
+    job_id = "1234-5678"
+
+    # Mock the collection construction and upload
+    mock_collection = mock.Mock()
+    mock_item = mock.Mock()
+    mock_item.id = "item_id"
+    mock_assets_1 = mock.Mock()
+    mock_assets_1.items.return_value = [
+        ("test_asset_item", Asset("test_href_1")),
+    ]
+    mock_item.set_self_href.return_value = None
+    mock_item.links = [Link("self", "test_self_href")]
+    mock_item.get_assets.return_value = mock_assets_1
+    mock_collection.get_items.return_value = [mock_item]
+    mock_collection.id = "test_collection"
+    mock_construct_collection.return_value = mock_collection
+    mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
+
+    # Mock the pystac.read_file to return a mock catalog
+    mock_catalog = mock.Mock()
+    mock_catalog.id = "test_catalog"
+    mock_catalog.links = [Link("root", "test_root_href"), Link("self", "test_self_href")]
+    mock_catalog.clear_items.return_value = None
+    mock_catalog.add_child.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.get_all_collections.return_value = [mock_collection]
+    mock_catalog.get_self_href.return_value = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
+    )
+    mock_os_path_join.return_value = "/tmp/outputs/catalog.json"
+    mock_read_file.return_value = mock_catalog
+
+    # Mock the upload_items function
+    mock_upload_items.return_value = []
+
+    result = handle_stac_outputs(
+        s3_client,
+        s3_endpoint,
+        workspace_domain,
+        workspace,
+        executing_workspace,
+        bucket,
+        subfolder,
+        job_id,
+        "test-workflow",
+    )
+    assert result
+    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    mock_write_file.assert_any_call(
+        mock_collection,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{executing_workspace}/test_collection.json",
+    )
+    mock_write_file.assert_any_call(
+        mock_catalog,
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{executing_workspace}.json",
     )
     mock_send_to_ingester.assert_called_once()
 
@@ -1574,6 +1663,7 @@ def test_handle_stac_outputs_file_not_found(mock_read_file):
     s3_endpoint = "s3_endpoint"
     workspace_domain = "workspace_domain"
     workspace = "workspace"
+    executing_workspace = "workspace"
     bucket = "bucket"
     subfolder = "subfolder"
     job_id = "job_id"
@@ -1583,6 +1673,7 @@ def test_handle_stac_outputs_file_not_found(mock_read_file):
         s3_endpoint,
         workspace_domain,
         workspace,
+        executing_workspace,
         bucket,
         subfolder,
         job_id,
@@ -1601,6 +1692,7 @@ def test_handle_stac_outputs_stac_type_error(mock_read_file):
     s3_endpoint = "s3_endpoint"
     workspace_domain = "workspace_domain"
     workspace = "workspace"
+    executing_workspace = "workspace"
     bucket = "bucket"
     subfolder = "subfolder"
     job_id = "job_id"
@@ -1610,6 +1702,7 @@ def test_handle_stac_outputs_stac_type_error(mock_read_file):
         s3_endpoint,
         workspace_domain,
         workspace,
+        executing_workspace,
         bucket,
         subfolder,
         job_id,
