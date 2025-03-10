@@ -17,6 +17,8 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from pystac.stac_io import DefaultStacIO, StacIO
 
+OUTPUT_ROOT = os.getenv("OUTPUT_ROOT", "user")
+
 
 class CustomStacIO(DefaultStacIO):
     """Custom STAC IO class that uses boto3 to read from S3."""
@@ -197,7 +199,7 @@ def send_to_ingester(
         "added_keys": harvest_list,
         "deleted_keys": [],
         "source": f"{workspace}/{subfolder}",
-        "target": f"user-datasets/{workspace}/{subfolder}",
+        "target": f"{OUTPUT_ROOT}/{workspace}/{subfolder}",
         "job_id": job_id,
         "workflow_id": workflow_id,
     }
@@ -506,7 +508,7 @@ def handle_annotations(
     return False
 
 
-def main(cat_url, bucket, subfolder, job_id, workflow_id):
+def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: str):
 
     s3_endpoint = bucket
     workspace_domain = os.environ["WORKSPACE_DOMAIN"]
