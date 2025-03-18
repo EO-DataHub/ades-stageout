@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import sys
@@ -8,7 +9,6 @@ from urllib.parse import urlparse
 
 import boto3
 import botocore
-import pulsar
 import pystac
 import requests
 from botocore.exceptions import ClientError
@@ -16,6 +16,10 @@ from html_sanitizer import Sanitizer
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from pystac.stac_io import DefaultStacIO, StacIO
+
+from .harvester import StageoutHarvester
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_ROOT = os.getenv("OUTPUT_ROOT", "user")
 
@@ -74,16 +78,21 @@ class CustomStacIO(DefaultStacIO):
                 ContentType="application/geo+json",
             )
             # Second upload to work with transformer
-            key = f"harvested/{self.workspace}/{key_suffix}"
-            self.s3_client.put_object(
-                Body=txt.encode("UTF-8"),
-                Bucket=self.s3_endpoint,
-                Key=key,
-                ContentType="application/geo+json",
-            )
+            # key = f"harvested/{self.workspace}/{key_suffix}"
+            # self.s3_client.put_object(
+            #     Body=txt.encode("UTF-8"),
+            #     Bucket=self.s3_endpoint,
+            #     Key=key,
+            #     ContentType="application/geo+json",
+            # )
         else:
             # Output location is not within the workspace - use default write_text
             super().write_text(dest, txt, *args, **kwargs)
+
+
+def convert_to_catalog_path(path: str) -> str:
+    cat_path = path.replace("/", "catalogs/")
+    return cat_path
 
 
 def get_aws_client() -> boto3.client:
@@ -158,7 +167,7 @@ def create_workflow_catalog(
     try:
         s3_client.head_object(Bucket=bucket, Key=f"{workspace}/{subfolder}.json")
         print(f"Catalog {subfolder}.json already exists", file=sys.stderr)
-        return f"harvested/{workspace}/{subfolder}.json"
+        return f"{workspace}/{subfolder}.json"
     except ClientError as e:
         if e.response["Error"]["Code"] != "404":
             print(f"Failed to check if catalog {workflow_id}.json exists: {e}", file=sys.stderr)
@@ -173,45 +182,7 @@ def create_workflow_catalog(
         catalog.set_self_href(href)
         print(f"Upload new Catalog {workflow_id}.json to {href}", file=sys.stderr)
         pystac.write_file(catalog, dest_href=href)
-        return f"harvested/{workspace}/{subfolder}.json"
-
-
-def send_to_ingester(
-    harvest_list: List[str],
-    bucket: str,
-    workspace: str,
-    subfolder: str,
-    topic: str,
-    name: str,
-    job_id: str,
-    workflow_id: str,
-):
-    pulsar_url = os.getenv("PULSAR_URL", "")
-    pulsar_client = pulsar.Client(pulsar_url)
-    producer = pulsar_client.create_producer(topic=topic, producer_name=name)
-    message_dict = {
-        "id": f"{name}/{workspace}",
-        "workspace": workspace,
-        "repository": "",
-        "branch": "main",
-        "bucket_name": bucket,
-        "updated_keys": [],
-        "added_keys": harvest_list,
-        "deleted_keys": [],
-        "source": f"{workspace}/{subfolder}",
-        "target": f"{OUTPUT_ROOT}/{workspace}/{subfolder}",
-        "job_id": job_id,
-        "workflow_id": workflow_id,
-    }
-    try:
-        # send message
-        msg = json.dumps(message_dict)
-        print("Sending message via pulsar ...", file=sys.stderr)
-        print(msg, file=sys.stderr)
-        producer.send(msg.encode("utf-8"))
-    finally:
-        producer.close()
-        pulsar_client.close()
+        return f"{workspace}/{subfolder}.json"
 
 
 def handle_assets(
@@ -230,7 +201,7 @@ def handle_assets(
             os.path.join(workspace, subfolder, cat_id, collection.id, os.path.basename(asset.href))
         )
         print(
-            f"Upload {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
+            f"Upload asset {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
             file=sys.stderr,
         )
         try:
@@ -245,7 +216,7 @@ def handle_assets(
             rewrite_asset_href = True
         except Exception as e:
             print(
-                f"Upload {item.id} to {s3_endpoint} at {subfolder} failed {e}",
+                f"Failed to upload asset {asset.get_absolute_href()} to {s3_endpoint} at {subfolder}: {e}",
                 file=sys.stderr,
             )
             rewrite_asset_href = False
@@ -323,17 +294,17 @@ def upload_items(
         print(f"Upload {item.id} to {s3_path}", file=sys.stderr)
         pystac.write_file(item, dest_href=s3_path)
         # Second upload to work with transformer
-        s3_path = "s3://" + os.path.normpath(
-            os.path.join(
-                bucket,
-                "harvested",
-                workspace,
-                subfolder,
-                cat_id,
-                collection_id,
-                os.path.basename(item.get_self_href()),
-            )
-        )
+        # s3_path = "s3://" + os.path.normpath(
+        #     os.path.join(
+        #         bucket,
+        #         "harvested",
+        #         workspace,
+        #         subfolder,
+        #         cat_id,
+        #         collection_id,
+        #         os.path.basename(item.get_self_href()),
+        #     )
+        # )
         pystac.write_file(item, dest_href=s3_path)
         files_for_harvesting.append(s3_path.replace(f"s3://{bucket}/", "", 1))
 
@@ -352,7 +323,7 @@ def generate_new_collection(
     cat_id,
     job_id,
     workflow_id,
-):
+) -> list[str]:
     # create a STAC collection for the process
     date = datetime.now().strftime("%Y-%m-%d")
 
@@ -404,32 +375,21 @@ def generate_new_collection(
     files_for_harvesting = upload_items(
         collection, cat_id, collection_id, bucket, workspace, subfolder
     )
-    files_for_harvesting.append(f"harvested/{workspace}/{subfolder}/{cat_id}.json")
-    files_for_harvesting.append(f"harvested/{workspace}/{subfolder}/{cat_id}/collection.json")
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
     # Add workflow_id catalog, if missing
     file_key = create_workflow_catalog(
         s3_client, workflow_id, subfolder, workspace, workspace_domain, bucket
     )
     if file_key:
         files_for_harvesting.append(file_key)
-    print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
-    send_to_ingester(
-        files_for_harvesting,
-        bucket,
-        workspace,
-        subfolder,
-        "harvested",
-        "ades-outputs-stac",
-        job_id,
-        workflow_id,
-    )
 
     print(
         "Generated new collection and uploaded to S3",
         file=sys.stdout,
     )
 
-    return True
+    return files_for_harvesting
 
 
 def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name) -> bool:
@@ -464,22 +424,21 @@ def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file
         print(f"Annotations in {file_name} uploaded successfully", file=sys.stderr)
         return True
     except Exception as e:
-        print(
-            f"Failed to upload annotations in {file_name} to {s3_path}: {e}",
-            file=sys.stderr,
-        )
+        print(f"Failed to upload annotations in {file_name} to {s3_path}: {e}", file=sys.stderr)
         return False
 
 
 def handle_annotations(
-    s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, workflow_id
-) -> bool:
+    s3_client, s3_endpoint, workspace, subfolder, catalog_id, job_id
+) -> list[str]:
     """
     Handle annotations defined in the annotations.json file
     """
 
-    cat_id = f"cat_{job_id}"
     added_annotations = []
+    cat_id = catalog_id
+    if not catalog_id:
+        cat_id = job_id
 
     # Identify all annotations files
     for file_name in os.listdir("/tmp/outputs"):
@@ -489,62 +448,9 @@ def handle_annotations(
 
     # Send annotations to ingester
     if added_annotations:
-        print(
-            "Annotations found, sending to ingester",
-            file=sys.stdout,
-        )
-        send_to_ingester(
-            added_annotations,
-            bucket,
-            workspace,
-            subfolder,
-            "harvested-annotations",
-            "ades-outputs-annotations",
-            job_id,
-            workflow_id,
-        )
-        return True
+        return added_annotations
 
     return False
-
-
-def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: str):
-
-    s3_endpoint = bucket
-    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
-    workspace = os.environ["WORKSPACE"]
-
-    try:
-        shutil.copytree(cat_url, "/tmp/outputs")
-    except FileNotFoundError:
-        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
-        raise
-
-    # Create S3 client
-    s3_client = get_aws_client()
-
-    # Set custom STAC IO
-    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
-        def create_custom_stac_io():
-            return CustomStacIO(
-                s3_endpoint=s3_endpoint, workspace=workspace, workspace_domain=workspace_domain
-            )
-
-        return create_custom_stac_io
-
-    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
-
-    catalog_created = handle_stac_outputs(
-        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
-    )
-
-    annotations_created = handle_annotations(
-        s3_client, s3_endpoint, workspace, bucket, subfolder, job_id, workflow_id
-    )
-
-    if not catalog_created and not annotations_created:
-        print("No outputs generated, stageout failed", file=sys.stderr)
-        raise
 
 
 def handle_current_collection(
@@ -559,7 +465,7 @@ def handle_current_collection(
     subfolder,
     workflow_id,
     job_id,
-):
+) -> list[str]:
 
     files_for_harvesting = []
 
@@ -608,10 +514,7 @@ def handle_current_collection(
                     continue
                 except ClientError:
                     # File does not exist, proceed with upload
-                    print(
-                        f"File does not exist, proceed with upload {public_url}",
-                        file=sys.stderr,
-                    )
+                    print(f"File does not exist, proceed with upload {public_url}", file=sys.stderr)
                     pass
 
                 if not license_href.startswith("http"):
@@ -679,13 +582,11 @@ def handle_current_collection(
         )
         # Upload collection to S3
         collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
-        print(f"Upload {collection.id}.json to {collection_href}", file=sys.stderr)
+        print(f"Upload collection {collection.id}.json to {collection_href}", file=sys.stderr)
         pystac.write_file(collection, dest_href=collection_href)
-        files_for_harvesting.append(
-            f"harvested/{workspace}/{subfolder}/{cat_id}/{collection.id}.json"
-        )
+        files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection.id}.json")
 
-    files_for_harvesting.append(f"harvested/{workspace}/{subfolder}/{cat_id}.json")
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
 
     # Add workflow_id catalog, if missing
     file_key = create_workflow_catalog(
@@ -693,19 +594,10 @@ def handle_current_collection(
     )
     if file_key:
         files_for_harvesting.append(file_key)
-    print("Files for harvesting: ", files_for_harvesting, file=sys.stderr)
-    send_to_ingester(
-        files_for_harvesting,
-        bucket,
-        workspace,
-        subfolder,
-        "harvested",
-        "ades-outputs-stac",
-        workflow_id,
-        job_id,
-    )
 
     print("Uploaded existing collections to S3", file=sys.stdout)
+
+    return files_for_harvesting
 
 
 def handle_stac_outputs(
@@ -717,23 +609,26 @@ def handle_stac_outputs(
     subfolder,
     job_id,
     workflow_id,
-) -> bool:
+) -> tuple:
 
     try:
         cat = pystac.read_file(os.path.join("/tmp/outputs", "catalog.json"))
     except FileNotFoundError:
         print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
-        return False
+        return "", False
     except pystac.STACTypeError:
         print("Failed to read STAC Catalog", file=sys.stderr)
-        return False
+        return "", False
+    except json.JSONDecodeError as e:
+        print(f"Failed to read STAC Catalog: {e}", file=sys.stderr)
+        return "", False
 
     # Create new catalog id
-    cat.id = f"cat_{job_id}"
+    # cat.id = f"cat_{job_id}"
     cat_id = cat.id
 
     # Create new collection id
-    collection_id = f"col_{job_id}"
+    collection_id = "collection"
 
     # Only need to generate collection if one is not already present in the generated catalog
     collections = list(cat.get_all_collections())
@@ -749,7 +644,7 @@ def handle_stac_outputs(
 
     if not collections:
         print("No Collections found, generating new collection", file=sys.stderr)
-        generate_new_collection(
+        output_keys = generate_new_collection(
             collection_id,
             cat,
             s3_client,
@@ -765,7 +660,7 @@ def handle_stac_outputs(
     else:
         # Use collections already present in the catalog
         print("Collections found, using existing collections", file=sys.stderr)
-        handle_current_collection(
+        output_keys = handle_current_collection(
             s3_client,
             s3_endpoint,
             cat,
@@ -782,13 +677,87 @@ def handle_stac_outputs(
     print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
     pystac.write_file(cat, dest_href=cat_href)
 
-    return True
+    return cat_id, output_keys
+
+
+def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: str, job_url: str):
+
+    s3_endpoint = bucket
+    workspace_domain = os.environ["WORKSPACE_DOMAIN"]
+    workspace = os.environ["WORKSPACE"]
+
+    try:
+        shutil.copytree(cat_url, "/tmp/outputs")
+    except FileNotFoundError:
+        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        raise
+
+    # Create S3 client
+    s3_client = get_aws_client()
+
+    # Create harvester
+    stageout_harvester = StageoutHarvester(
+        s3_client, bucket, os.getenv("PULSAR_URL"), OUTPUT_ROOT, job_id, job_url
+    )
+
+    # Set custom STAC IO
+    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
+        def create_custom_stac_io():
+            return CustomStacIO(
+                s3_endpoint=s3_endpoint,
+                workspace=workspace,
+                workspace_domain=workspace_domain,
+            )
+
+        return create_custom_stac_io
+
+    StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
+
+    cat_id, output_keys = handle_stac_outputs(
+        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
+    )
+
+    print(output_keys, file=sys.stderr)
+
+    output_annotations = handle_annotations(
+        s3_client, s3_endpoint, workspace, subfolder, cat_id, job_id
+    )
+
+    if not output_keys and not output_annotations:
+        print("No outputs generated, stageout failed", file=sys.stderr)
+        raise
+
+    # Harvest STAC Outputs
+    if output_keys:
+        print("STAC outputs found, sending to ingester", file=sys.stdout)
+        harvested_keys = stageout_harvester.harvest_files(output_keys)
+
+        # Ingest Outputs
+        print(harvested_keys, file=sys.stderr)
+        stageout_harvester.send_to_ingester(
+            harvested_keys, workspace, "harvested", "ades-outputs-stac", job_id
+        )
+
+    # Harvest Annotations
+    if output_annotations:
+        print("Annotations found, sending to ingester", file=sys.stdout)
+        harvested_keys = stageout_harvester.harvest_files(output_annotations)
+
+        # Harvest Annotations
+        stageout_harvester.send_to_ingester(
+            harvested_keys,
+            workspace,
+            "harvested-annotations",
+            "ades-outputs-annotations",
+            job_id,
+        )
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 6:
+    if len(sys.argv) != 7:
         print(
-            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> <job_id> <workflow_id>",
+            "Usage: python stageout.py <catalog_url> <bucket> <subfolder> ",
+            "<job_id> <workflow_id> <owning_workspace>",
             f"you provided {len(sys.argv)} arguments",
             file=sys.stderr,
         )
@@ -798,5 +767,11 @@ if __name__ == "__main__":
     subfolder = sys.argv[3]
     job_id = sys.argv[4]
     workflow_id = sys.argv[5]
+    job_url = sys.argv[6]
 
-    main(cat_url, bucket, subfolder, job_id, workflow_id)
+    print(
+        f"Running stageout with {cat_url} {bucket} {subfolder} {job_id} {workflow_id} {job_url}",
+        file=sys.stderr,
+    )
+
+    main(cat_url, bucket, subfolder, job_id, workflow_id, job_url)
