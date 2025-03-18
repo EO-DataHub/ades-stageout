@@ -3,9 +3,14 @@ FROM ghcr.io/terradue/ogc-eo-application-package-hands-on/stage:1.3.2
 
 RUN --mount=type=cache,target=/root/.cache/pip python -m pip install --upgrade pip
 
+WORKDIR /app
+
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip python -m pip install -r requirements.txt
 
-COPY stageout.py .
+COPY /stageout ./stageout
+RUN --mount=type=cache,target=/root/.cache/pip python -m pip install ./stageout
 
-CMD ["python", "stageout.py"]
+ENV PYTHONPATH="/app:${PYTHONPATH}"
+
+CMD ["python", "-m", "stageout"]
