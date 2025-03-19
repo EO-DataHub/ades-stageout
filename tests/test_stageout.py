@@ -4,7 +4,6 @@ from unittest.mock import mock_open, patch
 
 import pystac
 import pytest
-from botocore.exceptions import ClientError
 from kubernetes.client.rest import ApiException
 
 from stageout.__main__ import (
@@ -771,11 +770,13 @@ class Link:
 @patch("pystac.write_file")
 @patch("pystac.Extent")
 @patch("pystac.Collection")
+@patch("pystac.Catalog")
 @patch("pystac.read_file")
 @patch("shutil.copytree")
 def test_main_access_point_no_collection(
     mock_shutil_copytree,
     mock_pystac_read_file,
+    mock_pystac_Catalog,
     mock_pystac_Collection,
     mock_pystac_Extent,
     mock_pystac_write_file,
@@ -819,6 +820,11 @@ def test_main_access_point_no_collection(
     mock_catalog.get_self_href.return_value = (
         f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
     )
+
+    mock_workflow_catalog = mock.Mock()
+    mock_workflow_catalog.add_child.return_value = None
+    mock_workflow_catalog.normalize_hrefs.return_value = None
+    mock_pystac_Catalog.return_value = mock_workflow_catalog
 
     mock_shutil_copytree.return_value = None
 
@@ -876,6 +882,9 @@ def test_main_access_point_no_collection(
         keywords=["eoepca"],
         license="proprietary",
     )
+
+    assert mock_workflow_catalog.add_child.call_count == 1
+    mock_workflow_catalog.add_child.assert_called_once_with(mock_catalog)
 
     expected_s3_data = {
         "s3_endpoint": "bucket-name",
@@ -941,11 +950,13 @@ def test_main_access_point_no_collection(
 @patch("pystac.write_file")
 @patch("pystac.Extent")
 @patch("pystac.Collection")
+@patch("pystac.Catalog")
 @patch("pystac.read_file")
 @patch("shutil.copytree")
 def test_main_access_point_with_collection(
     mock_shutil_copytree,
     mock_pystac_read_file,
+    mock_pystac_Catalog,
     mock_pystac_Collection,
     mock_pystac_Extent,
     mock_pystac_write_file,
@@ -997,6 +1008,11 @@ def test_main_access_point_with_collection(
     mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
     mock_pystac_Collection.return_value = mock_collection
 
+    mock_workflow_catalog = mock.Mock()
+    mock_workflow_catalog.add_child.return_value = None
+    mock_workflow_catalog.normalize_hrefs.return_value = None
+    mock_pystac_Catalog.return_value = mock_workflow_catalog
+
     mock_catalog = mock.Mock()
     mock_catalog.id = "test_catalog"
     mock_catalog.links = [Link("root", "test_root_href"), Link("self", "test_self_href")]
@@ -1046,6 +1062,9 @@ def test_main_access_point_with_collection(
         f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/{collection_id}.json"
     )
 
+    assert mock_workflow_catalog.add_child.call_count == 1
+    mock_workflow_catalog.add_child.assert_called_once_with(mock_catalog)
+
     mock_item_1.set_collection.assert_called_once_with(mock_collection)
     mock_item_2.set_collection.assert_called_once_with(mock_collection)
 
@@ -1085,7 +1104,7 @@ def test_main_access_point_with_collection(
         "ades-outputs-stac",
         job_id,
     )
-    assert mock_boto3_client_instance.head_object.call_count == 2
+    assert mock_boto3_client_instance.head_object.call_count == 1
 
 
 @patch("builtins.open")
@@ -1123,11 +1142,13 @@ def test_get_current_namespace_error(mock_open):
 @patch("pystac.write_file")
 @patch("pystac.Extent")
 @patch("pystac.Collection")
+@patch("pystac.Catalog")
 @patch("pystac.read_file")
 @patch("shutil.copytree")
 def test_main_no_access_point(
     mock_shutil_copytree,
     mock_pystac_read_file,
+    mock_pystac_Catalog,
     mock_pystac_Collection,
     mock_pystac_Extent,
     mock_pystac_write_file,
@@ -1148,7 +1169,7 @@ def test_main_no_access_point(
     collection_id = "collection"
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
-    subfolder = "test_subfolder"
+    subfolder = "/path/to/test_subfolder"
     workspace = "test_workspace"
     workspace_domain = "test.workspace.domain.com"
     topic = "harvested"
@@ -1200,6 +1221,11 @@ def test_main_no_access_point(
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_pystac_Collection.return_value = mock_collection
 
+    mock_workflow_catalog = mock.Mock()
+    mock_workflow_catalog.add_child.return_value = None
+    mock_workflow_catalog.normalize_hrefs.return_value = None
+    mock_pystac_Catalog.return_value = mock_workflow_catalog
+
     mock_pystac_Extent.return_value = "some-extent"
 
     mock_get_bucket_from_namespace.return_value = None
@@ -1230,6 +1256,9 @@ def test_main_no_access_point(
         keywords=["eoepca"],
         license="proprietary",
     )
+
+    assert mock_workflow_catalog.add_child.call_count == 1
+    mock_workflow_catalog.add_child.assert_called_once_with(mock_catalog)
 
     expected_s3_data = {
         "s3_endpoint": bucket,
@@ -1595,17 +1624,14 @@ def test_handle_stac_outputs_stac_type_error(mock_read_file):
 def test_create_workflow_catalog(mock_write_file):
     # Configure mocks
     mock_write_file.return_value = None
-    s3_client = mock.Mock()
-    error_response = {"Error": {"Code": "404", "Message": "The specified key does not exist."}}
-    client_error = ClientError(error_response, "head_object")
-    s3_client.head_object.side_effect = client_error
+    mock_catalog = mock.Mock()
     result = create_workflow_catalog(
-        s3_client,
         "test-workflow",
         "processing-results/test-workflow",
         "workspace",
         "workspace.domain.com",
         "bucket",
+        mock_catalog,
     )
 
     assert result == "workspace/processing-results/test-workflow.json"
@@ -1616,43 +1642,3 @@ def test_create_workflow_catalog(mock_write_file):
     assert call_args[1] == {
         "dest_href": "https://workspace.workspace.domain.com/files/bucket/processing-results/test-workflow.json"
     }
-
-
-@patch("pystac.write_file")
-def test_create_workflow_catalog_already_present(mock_write_file):
-    # Configure mocks
-    mock_write_file.return_value = None
-    s3_client = mock.Mock()
-    s3_client.head_object.return_value = "some-file-data"
-    result = create_workflow_catalog(
-        s3_client,
-        "test-workflow",
-        "processing-results/test-workflow",
-        "workspace",
-        "workspace.domain.com",
-        "bucket",
-    )
-
-    assert result == "workspace/processing-results/test-workflow.json"
-    mock_write_file.assert_not_called()
-
-
-@patch("pystac.write_file")
-def test_create_workflow_catalog_error(mock_write_file):
-    # Configure mocks
-    mock_write_file.return_value = None
-    s3_client = mock.Mock()
-    error_response = {"Error": {"Code": "NoSuchKey", "Message": "Some boto3 exception."}}
-    client_error = ClientError(error_response, "head_object")
-    s3_client.head_object.side_effect = client_error
-    result = create_workflow_catalog(
-        s3_client,
-        "test-workflow",
-        "processing-results/test-workflow",
-        "workspace",
-        "workspace.domain.com",
-        "bucket",
-    )
-
-    assert not result
-    mock_write_file.assert_not_called()
