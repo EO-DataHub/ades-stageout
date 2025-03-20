@@ -11,6 +11,6 @@ RUN --mount=type=cache,target=/root/.cache/pip python -m pip install -r requirem
 COPY /stageout ./stageout
 RUN --mount=type=cache,target=/root/.cache/pip python -m pip install ./stageout
 
-ENV PYTHONPATH="/app:${PYTHONPATH}"
+ENV PYTHONPATH="/app"
 
 CMD ["python", "-m", "stageout"]
