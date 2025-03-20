@@ -77,14 +77,6 @@ class CustomStacIO(DefaultStacIO):
                 Key=key,
                 ContentType="application/geo+json",
             )
-            # Second upload to work with transformer
-            # key = f"harvested/{self.workspace}/{key_suffix}"
-            # self.s3_client.put_object(
-            #     Body=txt.encode("UTF-8"),
-            #     Bucket=self.s3_endpoint,
-            #     Key=key,
-            #     ContentType="application/geo+json",
-            # )
         else:
             # Output location is not within the workspace - use default write_text
             super().write_text(dest, txt, *args, **kwargs)
@@ -283,19 +275,6 @@ def upload_items(
         )
         print(f"Upload {item.id} to {s3_path}", file=sys.stderr)
         pystac.write_file(item, dest_href=s3_path)
-        # Second upload to work with transformer
-        # s3_path = "s3://" + os.path.normpath(
-        #     os.path.join(
-        #         bucket,
-        #         "harvested",
-        #         workspace,
-        #         subfolder,
-        #         cat_id,
-        #         collection_id,
-        #         os.path.basename(item.get_self_href()),
-        #     )
-        # )
-        pystac.write_file(item, dest_href=s3_path)
         files_for_harvesting.append(s3_path.replace(f"s3://{bucket}/", "", 1))
 
     return files_for_harvesting
@@ -367,12 +346,6 @@ def generate_new_collection(
     )
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
-    # Add workflow_id catalog, if missing
-    # file_key = create_workflow_catalog(
-    #     s3_client, workflow_id, subfolder, workspace, workspace_domain, bucket
-    # )
-    # if file_key:
-    #     files_for_harvesting.append(file_key)
 
     print(
         "Generated new collection and uploaded to S3",
@@ -578,13 +551,6 @@ def handle_current_collection(
 
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
 
-    # Add workflow_id catalog, if missing
-    # file_key = create_workflow_catalog(
-    #     s3_client, workflow_id, subfolder, workspace, workspace_domain, bucket
-    # )
-    # if file_key:
-    #     files_for_harvesting.append(file_key)
-
     print("Uploaded existing collections to S3", file=sys.stdout)
 
     return files_for_harvesting
@@ -614,7 +580,6 @@ def handle_stac_outputs(
         return "", False
 
     # Create new catalog id
-    # cat.id = f"cat_{job_id}"
     cat_id = cat.id
 
     # Create new collection id
@@ -712,8 +677,6 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
     cat_id, output_keys = handle_stac_outputs(
         s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
     )
-
-    print(output_keys, file=sys.stderr)
 
     output_annotations = handle_annotations(
         s3_client, s3_endpoint, workspace, subfolder, cat_id, job_id
