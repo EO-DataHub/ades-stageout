@@ -6,9 +6,9 @@
 #
 beautifulsoup4==4.13.3
     # via html-sanitizer
-boto3==1.37.15
+boto3==1.37.16
     # via eodhp-ades-stageout (pyproject.toml)
-botocore==1.37.15
+botocore==1.37.16
     # via
     #   boto3
     #   eodhp-ades-stageout (pyproject.toml)
