@@ -699,7 +699,7 @@ def test_upload_items(mock_pystac_write_file):
     ]
 
     # Check calls are as expected
-    assert mock_pystac_write_file.call_count == 4
+    assert mock_pystac_write_file.call_count == 2
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_item_1
     assert calls[0][1] == {
