@@ -149,6 +149,7 @@ def create_workflow_catalog(
     workflow_id: str,
     subfolder: str,
     workspace: str,
+    executing_workspace: str,
     workspace_domain: str,
     bucket: str,
 ) -> Optional[str]:
@@ -156,6 +157,8 @@ def create_workflow_catalog(
     try:
         s3_client.head_object(Bucket=bucket, Key=f"{workspace}/{subfolder}.json")
         print(f"Catalog {subfolder}.json already exists", file=sys.stderr)
+        if executing_workspace in ["airbus", "planet"]:
+            return None
         return f"harvested/{workspace}/{subfolder}.json"
     except ClientError as e:
         if e.response["Error"]["Code"] != "404":
@@ -344,6 +347,7 @@ def generate_new_collection(
     s3_client,
     s3_endpoint,
     workspace,
+    executing_workspace,
     workspace_domain,
     bucket,
     subfolder,
@@ -406,7 +410,7 @@ def generate_new_collection(
     files_for_harvesting.append(f"harvested/{workspace}/{subfolder}/{cat_id}/collection.json")
     # Add workflow_id catalog, if missing
     file_key = create_workflow_catalog(
-        s3_client, workflow_id, subfolder, workspace, workspace_domain, bucket
+        s3_client, workflow_id, subfolder, workspace, executing_workspace, workspace_domain, bucket
     )
     if file_key:
         files_for_harvesting.append(file_key)
@@ -563,6 +567,7 @@ def handle_current_collection(
     workspace_domain,
     bucket,
     workspace,
+    executing_workspace,
     subfolder,
     workflow_id,
     job_id,
@@ -696,7 +701,7 @@ def handle_current_collection(
 
     # Add workflow_id catalog, if missing
     file_key = create_workflow_catalog(
-        s3_client, workflow_id, subfolder, workspace, workspace_domain, bucket
+        s3_client, workflow_id, subfolder, workspace, executing_workspace, workspace_domain, bucket
     )
     if file_key:
         files_for_harvesting.append(file_key)
@@ -766,6 +771,7 @@ def handle_stac_outputs(
             s3_client,
             s3_endpoint,
             workspace,
+            executing_workspace,
             workspace_domain,
             bucket,
             subfolder,
@@ -785,6 +791,7 @@ def handle_stac_outputs(
             workspace_domain,
             bucket,
             workspace,
+            executing_workspace,
             subfolder,
             workflow_id,
             job_id,
