@@ -1107,6 +1107,175 @@ def test_main_access_point_with_collection(
     assert mock_boto3_client_instance.head_object.call_count == 1
 
 
+@patch("os.listdir")
+@patch("stageout.__main__.get_aws_client")
+@patch("stageout.harvester.StageoutHarvester.send_to_ingester")
+@patch("stageout.harvester.StageoutHarvester.harvest_files")
+@patch("stageout.__main__.upload_items")
+@patch("stageout.__main__.get_bucket_from_namespace")
+@patch("stageout.__main__.construct_collection_and_upload_assets")
+@patch("pystac.write_file")
+@patch("pystac.Extent")
+@patch("pystac.Collection")
+@patch("pystac.Catalog")
+@patch("pystac.read_file")
+@patch("shutil.copytree")
+def test_main_access_point_blank_catalog_id(
+    mock_shutil_copytree,
+    mock_pystac_read_file,
+    mock_pystac_Catalog,
+    mock_pystac_Collection,
+    mock_pystac_Extent,
+    mock_pystac_write_file,
+    mock_construct_collection_and_upload_assets,
+    mock_get_bucket_from_namespace,
+    mock_upload_items,
+    mock_harvest_files,
+    mock_send_to_ingester,
+    mock_get_aws_client,
+    mock_os_listdir,
+    setenvvar,
+):
+    """Test main function with no AWS credentials, instead using access point"""
+
+    # Configure test variables
+    job_id = "1234-5678"
+    job_url = "https://test-url/catalogs/user/catalogs/workspace/jobs/job-id"
+    collection_id = f"col_{job_id}"
+    cat_url = "test_catalog_url"
+    bucket = "test_bucket"
+    subfolder = "test_subfolder"
+    workspace = "test_workspace"
+    workspace_domain = "test.workspace.domain.com"
+
+    # Configure mocks
+    mock_boto3_client_instance = mock.Mock()
+    mock_get_aws_client.return_value = mock_boto3_client_instance
+    mock_boto3_client_instance.head_object.return_value = None
+    mock_link = mock.Mock(rel="root", href="./root-link")
+
+    mock_item_1 = mock.Mock()
+    mock_item_1.id = "test_item_1"
+    mock_asset_1 = mock.Mock(href="s3://bucket/path/to/asset1")
+    mock_item_1.get_assets.return_value = {"asset_key": mock_asset_1}
+    mock_item_1.links = [mock_link]
+    mock_item_2 = mock.Mock()
+    mock_item_2.id = "test_item_2"
+    mock_asset_2 = mock.Mock(href="s3://bucket/path/to/asset2")
+    mock_item_2.get_assets.return_value = {"asset_key": mock_asset_2}
+    mock_item_2.links = [mock_link]
+
+    mock_collection = mock.Mock()
+    mock_collection.update_extent_from_items.return_value = None
+    mock_collection.get_self_href.return_value = (
+        f"s3://bucket-name/{subfolder}/test_catalog/{collection_id}.json"
+    )
+    mock_collection.id = collection_id
+    mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
+    mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
+    mock_pystac_Collection.return_value = mock_collection
+
+    mock_workflow_catalog = mock.Mock()
+    mock_workflow_catalog.add_child.return_value = None
+    mock_workflow_catalog.normalize_hrefs.return_value = None
+    mock_pystac_Catalog.return_value = mock_workflow_catalog
+
+    mock_catalog = mock.Mock()
+    mock_catalog.id = ""
+    mock_catalog.links = [Link("root", "test_root_href"), Link("self", "test_self_href")]
+    mock_catalog.clear_items.return_value = None
+    mock_catalog.add_child.return_value = None
+    mock_catalog.normalize_hrefs.return_value = None
+    mock_catalog.get_all_collections.return_value = [mock_collection]
+    mock_catalog.get_self_href.return_value = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
+    )
+
+    expected_cat_id = f"cat_{job_id}"
+
+    mock_shutil_copytree.return_value = None
+    mock_os_listdir.return_value = ["catalog.json"]  # no annotations present
+
+    mock_pystac_read_file.return_value = mock_catalog
+    mock_pystac_write_file.return_value = None
+
+    mock_pystac_Extent.return_value = "some-extent"
+    mock_get_bucket_from_namespace.return_value = "test-access-point/test-bucket"
+
+    mock_construct_collection_and_upload_assets.return_value = mock_collection
+
+    mock_upload_items.return_value = [
+        f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}/test_item_1",
+        f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}/test_item_2",
+    ]
+
+    mock_send_to_ingester.return_value = None
+    mock_harvest_files.return_value = [
+        f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}/test_item_1",
+        f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}/test_item_2",
+        f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}.json",
+        f"{workspace}/{subfolder}/{expected_cat_id}.json",
+        f"{workspace}/{subfolder}.json",
+    ]
+
+    main(cat_url, bucket, subfolder, job_id, "test-workflow", job_url)
+
+    # Check calls are as expected
+    mock_catalog.set_self_href.assert_called_once_with(
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}.json"
+    )
+    mock_catalog.add_child.assert_called_once_with(mock_collection)
+    mock_catalog.normalize_hrefs.assert_called_once()
+
+    mock_collection.set_self_href.assert_called_once_with(
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}/{collection_id}.json"
+    )
+
+    assert mock_workflow_catalog.add_child.call_count == 1
+    mock_workflow_catalog.add_child.assert_called_once_with(mock_catalog)
+
+    mock_item_1.set_collection.assert_called_once_with(mock_collection)
+    mock_item_2.set_collection.assert_called_once_with(mock_collection)
+
+    mock_item_1.set_self_href.assert_called_once_with(
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}/{collection_id}/{mock_item_1.id}.json"
+    )
+    mock_item_2.set_self_href.assert_called_once_with(
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}/{collection_id}/{mock_item_2.id}.json"
+    )
+
+    mock_item_1.add_asset.assert_called_once_with("asset_key", mock_asset_1)
+    mock_item_2.add_asset.assert_called_once_with("asset_key", mock_asset_2)
+
+    calls = mock_pystac_write_file.call_args_list
+    assert calls[0][0][0] == mock_collection
+    assert calls[0][1] == {
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}/{collection_id}.json"
+    }
+    assert calls[1][0][0] == mock_catalog
+    assert calls[1][1] == {
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}.json"
+    }
+    # Check root link was removed
+    assert len(calls[1][0][0].links) == 1
+
+    assert mock_send_to_ingester.call_count == 1
+    mock_send_to_ingester.assert_called_once_with(
+        [
+            f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}/test_item_1",
+            f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}/test_item_2",
+            f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}.json",
+            f"{workspace}/{subfolder}/{expected_cat_id}.json",
+            f"{workspace}/{subfolder}.json",
+        ],
+        "test_workspace",
+        "harvested",
+        "ades-outputs-stac",
+        job_id,
+    )
+    assert mock_boto3_client_instance.head_object.call_count == 1
+
+
 @patch("builtins.open")
 def test_get_current_namespace(mock_open):
 
