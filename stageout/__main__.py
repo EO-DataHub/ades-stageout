@@ -582,6 +582,9 @@ def handle_stac_outputs(
     # Create new catalog id
     cat_id = cat.id
 
+    if not cat_id:
+        cat_id = f"cat_{job_id}"
+
     # Create new collection id
     collection_id = "collection"
 
