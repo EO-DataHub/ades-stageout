@@ -584,6 +584,7 @@ def handle_stac_outputs(
 
     if not cat_id:
         cat_id = f"cat_{job_id}"
+        cat.id = cat_id
 
     # Create new collection id
     collection_id = "collection"
