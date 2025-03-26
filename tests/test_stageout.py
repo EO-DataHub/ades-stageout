@@ -1090,6 +1090,8 @@ def test_main_access_point_with_collection(
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
 
+    assert mock_catalog.id == "test_catalog"
+
     assert mock_send_to_ingester.call_count == 1
     mock_send_to_ingester.assert_called_once_with(
         [
@@ -1258,6 +1260,8 @@ def test_main_access_point_blank_catalog_id(
     }
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
+
+    assert mock_catalog.id == f"cat_{job_id}"
 
     assert mock_send_to_ingester.call_count == 1
     mock_send_to_ingester.assert_called_once_with(
