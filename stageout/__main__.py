@@ -187,15 +187,17 @@ def handle_assets(
             file=sys.stderr,
         )
         try:
-            s3_client.upload_file(
-                asset.get_absolute_href(),
-                s3_endpoint,
-                s3_path,
-            )
-            rewrite_asset_href = True
-        except IsADirectoryError:
-            upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
-            rewrite_asset_href = True
+            if os.path.isdir(asset.get_absolute_href()):
+                # If the asset is a directory, use upload_directory
+                upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
+                rewrite_asset_href = True
+            else:
+                s3_client.upload_file(
+                    asset.get_absolute_href(),
+                    s3_endpoint,
+                    s3_path,
+                )
+                rewrite_asset_href = True
         except Exception as e:
             print(
                 f"Failed to upload asset {asset.get_absolute_href()} to {s3_endpoint} at {subfolder}: {e}",
