@@ -445,6 +445,10 @@ def handle_current_collection(
     hosted_zone = os.getenv("HOSTED_ZONE")
 
     for collection in collections:
+
+        if collection.id == "":
+            collection.id = f"col_{job_id}"
+
         cat.add_child(collection)
 
         items = collection.get_items()
