@@ -859,7 +859,7 @@ def test_main_access_point_no_collection(
             "test_item_1",
             "test_item_2",
             f"{workspace}/{subfolder}/test_catalog.json",
-            f"{workspace}/{subfolder}/test_catalog/collection.json",
+            f"{workspace}/{subfolder}/test_catalog/{collection_id}.json",
             f"{workspace}/{subfolder}.json",
         ],
         [f"{workspace}/{subfolder}/test_catalog/collection-annotations.json"],
@@ -873,11 +873,11 @@ def test_main_access_point_no_collection(
     mock_catalog.add_child.assert_called_once_with(mock_collection)
     mock_catalog.normalize_hrefs.assert_called_once()
     mock_pystac_Collection.assert_called_once_with(
-        id="collection",
+        id=collection_id,
         description="description",
         extent="some-extent",
         title=f"Result Collection for Job {job_id}",
-        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/collection.json",
+        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/{collection_id}.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -904,7 +904,7 @@ def test_main_access_point_no_collection(
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/collection.json"
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/{collection_id}.json"
     }
     assert calls[1][0][0] == mock_catalog
     assert calls[1][1] == {
@@ -920,7 +920,7 @@ def test_main_access_point_no_collection(
             "test_item_1",
             "test_item_2",
             f"{workspace}/{subfolder}/test_catalog.json",
-            f"{workspace}/{subfolder}/test_catalog/collection.json",
+            f"{workspace}/{subfolder}/test_catalog/{collection_id}.json",
             f"{workspace}/{subfolder}.json",
         ],
         "test_workspace",
@@ -1089,6 +1089,8 @@ def test_main_access_point_with_collection(
     }
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
+
+    assert mock_catalog.id == "test_catalog"
 
     assert mock_send_to_ingester.call_count == 1
     mock_send_to_ingester.assert_called_once_with(
@@ -1259,6 +1261,8 @@ def test_main_access_point_blank_catalog_id(
     # Check root link was removed
     assert len(calls[1][0][0].links) == 1
 
+    assert mock_catalog.id == f"cat_{job_id}"
+
     assert mock_send_to_ingester.call_count == 1
     mock_send_to_ingester.assert_called_once_with(
         [
@@ -1335,10 +1339,10 @@ def test_main_no_access_point(
     # Configure test variables
     job_id = "12345678"
     job_url = "https://test-url/catalogs/user/catalogs/workspace/jobs/job-id"
-    collection_id = "collection"
+    collection_id = f"col_{job_id}"
     cat_url = "test_catalog_url"
     bucket = "test_bucket"
-    subfolder = "/path/to/test_subfolder"
+    subfolder = "path/to/test_subfolder"
     workspace = "test_workspace"
     workspace_domain = "test.workspace.domain.com"
     topic = "harvested"
@@ -1349,7 +1353,7 @@ def test_main_no_access_point(
         f"{workspace}/{subfolder}/test_catalog/{collection_id}/test_item_1",
         f"{workspace}/{subfolder}/test_catalog/{collection_id}/test_item_2",
         f"{workspace}/{subfolder}/test_catalog.json",
-        f"{workspace}/{subfolder}/test_catalog/collection.json",
+        f"{workspace}/{subfolder}/test_catalog/{collection_id}.json",
         f"{workspace}/{subfolder}.json",
     ]
     mock_send_to_ingester.return_value = None
@@ -1420,7 +1424,7 @@ def test_main_no_access_point(
         description="description",
         extent="some-extent",
         title=f"Result Collection for Job {job_id}",
-        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/collection.json",
+        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/{collection_id}.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -1447,7 +1451,7 @@ def test_main_no_access_point(
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
-        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/collection.json"
+        "dest_href": f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/{collection_id}.json"
     }
     assert calls[1][0][0] == mock_catalog
     assert calls[1][1] == {
@@ -1462,7 +1466,7 @@ def test_main_no_access_point(
             f"{workspace}/{subfolder}/test_catalog/{collection_id}/test_item_1",
             f"{workspace}/{subfolder}/test_catalog/{collection_id}/test_item_2",
             f"{workspace}/{subfolder}/test_catalog.json",
-            f"{workspace}/{subfolder}/test_catalog/collection.json",
+            f"{workspace}/{subfolder}/test_catalog/{collection_id}.json",
             f"{workspace}/{subfolder}.json",
         ],
         "test_workspace",
@@ -1649,7 +1653,7 @@ def test_handle_stac_outputs_no_collection_success(
     mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
     mock_write_file.assert_any_call(
         mock_collection,
-        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/collection.json",
+        dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/col_{job_id}.json",
     )
     mock_write_file.assert_any_call(
         mock_catalog,
