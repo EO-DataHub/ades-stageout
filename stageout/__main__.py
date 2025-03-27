@@ -187,15 +187,17 @@ def handle_assets(
             file=sys.stderr,
         )
         try:
-            s3_client.upload_file(
-                asset.get_absolute_href(),
-                s3_endpoint,
-                s3_path,
-            )
-            rewrite_asset_href = True
-        except IsADirectoryError:
-            upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
-            rewrite_asset_href = True
+            if os.path.isdir(asset.get_absolute_href()):
+                # If the asset is a directory, use upload_directory
+                upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
+                rewrite_asset_href = True
+            else:
+                s3_client.upload_file(
+                    asset.get_absolute_href(),
+                    s3_endpoint,
+                    s3_path,
+                )
+                rewrite_asset_href = True
         except Exception as e:
             print(
                 f"Failed to upload asset {asset.get_absolute_href()} to {s3_endpoint} at {subfolder}: {e}",
@@ -309,7 +311,7 @@ def generate_new_collection(
             temporal=pystac.TemporalExtent(intervals=[[min(dates), max(dates)]]),
         ),
         title=f"Result Collection for Job {job_id}",
-        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/collection.json",
+        href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}.json",
         stac_extensions=[],
         keywords=["eoepca"],
         license="proprietary",
@@ -336,7 +338,7 @@ def generate_new_collection(
     cat.add_child(collection)
 
     # Upload collection to S3
-    collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/collection.json"
+    collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}.json"
     collection.set_self_href(collection_href)
     print(f"Upload collection.json to {collection_href}", file=sys.stderr)
     pystac.write_file(collection, dest_href=collection_href)
@@ -345,7 +347,7 @@ def generate_new_collection(
         collection, cat_id, collection_id, bucket, workspace, subfolder
     )
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
-    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/collection.json")
+    files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection_id}.json")
 
     print(
         "Generated new collection and uploaded to S3",
@@ -584,9 +586,10 @@ def handle_stac_outputs(
 
     if not cat_id:
         cat_id = f"cat_{job_id}"
+        cat.id = cat_id
 
     # Create new collection id
-    collection_id = "collection"
+    collection_id = f"col_{job_id}"
 
     # Only need to generate collection if one is not already present in the generated catalog
     collections = list(cat.get_all_collections())
@@ -653,7 +656,7 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
     try:
         shutil.copytree(cat_url, "/tmp/outputs")
     except FileNotFoundError:
-        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        print(f"Failed to copy STAC data at {cat_url}", file=sys.stderr)
         raise
 
     # Create S3 client
