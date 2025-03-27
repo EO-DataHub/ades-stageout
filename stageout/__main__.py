@@ -446,7 +446,8 @@ def handle_current_collection(
 
     for collection in collections:
 
-        if collection.id == "":
+        if not collection.id:
+            # If collection id is not set, generate a new one
             collection.id = f"col_{job_id}"
 
         cat.add_child(collection)
