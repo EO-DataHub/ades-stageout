@@ -494,10 +494,14 @@ def test_construct_collection_and_upload_assets_external_links():
 
 
 @patch("stageout.__main__.upload_directory")
-def test_construct_collection_and_upload_assets_directory(mock_upload_directory):
+@patch("os.path.isdir")
+def test_construct_collection_and_upload_assets_directory(
+    mock_os_path_isdir, mock_upload_directory
+):
     """Test construct_collection_and_upload_assets function with assets that are directories"""
 
     # Configure mocks
+    mock_os_path_isdir.return_value = True
     mock_catalog = mock.Mock()
     mock_collection = mock.Mock()
     mock_assets_1 = mock.Mock()
@@ -990,11 +994,13 @@ def test_main_access_point_with_collection(
     mock_item_1 = mock.Mock()
     mock_item_1.id = "test_item_1"
     mock_asset_1 = mock.Mock(href="s3://bucket/path/to/asset1")
+    mock_asset_1.get_absolute_href.return_value = "/path/to/asset1"
     mock_item_1.get_assets.return_value = {"asset_key": mock_asset_1}
     mock_item_1.links = [mock_link]
     mock_item_2 = mock.Mock()
     mock_item_2.id = "test_item_2"
     mock_asset_2 = mock.Mock(href="s3://bucket/path/to/asset2")
+    mock_asset_2.get_absolute_href.return_value = "/path/to/asset2"
     mock_item_2.get_assets.return_value = {"asset_key": mock_asset_2}
     mock_item_2.links = [mock_link]
 
@@ -1115,7 +1121,6 @@ def test_main_access_point_with_collection(
 @patch("stageout.harvester.StageoutHarvester.harvest_files")
 @patch("stageout.__main__.upload_items")
 @patch("stageout.__main__.get_bucket_from_namespace")
-@patch("stageout.__main__.construct_collection_and_upload_assets")
 @patch("pystac.write_file")
 @patch("pystac.Extent")
 @patch("pystac.Collection")
@@ -1129,7 +1134,6 @@ def test_main_access_point_blank_catalog_id(
     mock_pystac_Collection,
     mock_pystac_Extent,
     mock_pystac_write_file,
-    mock_construct_collection_and_upload_assets,
     mock_get_bucket_from_namespace,
     mock_upload_items,
     mock_harvest_files,
@@ -1159,11 +1163,13 @@ def test_main_access_point_blank_catalog_id(
     mock_item_1 = mock.Mock()
     mock_item_1.id = "test_item_1"
     mock_asset_1 = mock.Mock(href="s3://bucket/path/to/asset1")
+    mock_asset_1.get_absolute_href.return_value = "/path/to/asset1"
     mock_item_1.get_assets.return_value = {"asset_key": mock_asset_1}
     mock_item_1.links = [mock_link]
     mock_item_2 = mock.Mock()
     mock_item_2.id = "test_item_2"
     mock_asset_2 = mock.Mock(href="s3://bucket/path/to/asset2")
+    mock_asset_2.get_absolute_href.return_value = "/path/to/asset2"
     mock_item_2.get_assets.return_value = {"asset_key": mock_asset_2}
     mock_item_2.links = [mock_link]
 
@@ -1203,8 +1209,6 @@ def test_main_access_point_blank_catalog_id(
 
     mock_pystac_Extent.return_value = "some-extent"
     mock_get_bucket_from_namespace.return_value = "test-access-point/test-bucket"
-
-    mock_construct_collection_and_upload_assets.return_value = mock_collection
 
     mock_upload_items.return_value = [
         f"{workspace}/{subfolder}/{expected_cat_id}/{collection_id}/test_item_1",
