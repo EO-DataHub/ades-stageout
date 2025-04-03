@@ -462,7 +462,7 @@ def handle_current_collection(
             if link.rel == "license":
                 license_href = link.href
                 license_filename = os.path.basename(license_href)
-                public_path = f"api/catalogue/licences/{workspace}/{license_filename}"
+                public_path = f"api/catalogue/stac/licences/{workspace}/{license_filename}"
                 public_url = f"https://{hosted_zone}/{public_path}"
                 # Check if the file already exists in the S3 bucket
                 try:
