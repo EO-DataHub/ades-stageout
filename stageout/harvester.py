@@ -76,7 +76,7 @@ class StageoutHarvester:
         job_id: str,
     ):
         pulsar_client = pulsar.Client(self.pulsar_url)
-        producer = pulsar_client.create_producer(topic=topic, producer_name=name)
+        producer = pulsar_client.create_producer(topic=topic, producer_name=f"{name}-{job_id}")
         message_dict = {
             "id": job_id,
             "workspace": workspace,
