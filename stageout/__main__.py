@@ -177,8 +177,14 @@ def handle_assets(
     bucket: str,
 ):
     for key, asset in item.get_assets().items():
+        if asset.href.startswith("/tmp/outputs/"):
+            # Preserve file structure for local outputs
+            relative_path = asset.href.replace("/tmp/outputs/", "", 1)
+        else:
+            # Compress to the file name for outputs from other sources
+            relative_path = os.path.basename(asset.href)
         s3_path = os.path.normpath(
-            os.path.join(workspace, subfolder, cat_id, collection.id, os.path.basename(asset.href))
+            os.path.join(workspace, subfolder, cat_id, collection.id, relative_path)
         )
         print(
             f"Upload asset {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
