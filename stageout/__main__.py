@@ -99,6 +99,7 @@ def get_aws_client() -> boto3.client:
             aws_session_token=os.environ.get("AWS_SESSION_TOKEN"),
         )
     else:
+        print("Creeating aws client with no creds", file=sys.stderr)
         s3_client = boto3.client("s3")
     return s3_client
 
@@ -650,20 +651,57 @@ def handle_stac_outputs(
     return cat_id, output_keys
 
 
+# Print disk space usage
+def print_disk_space():
+    total, used, free = shutil.disk_usage("/")
+    print("Disk Space Information:", file=sys.stderr)
+    print(f"  Total: {total // (1024 * 1024)} MB", file=sys.stderr)
+    print(f"  Used: {used // (1024 * 1024)} MB", file=sys.stderr)
+    print(f"  Free: {free // (1024 * 1024)} MB", file=sys.stderr)
+
+
 def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: str, job_url: str):
+
+    print("Running main function", file=sys.stderr)
 
     s3_endpoint = bucket
     workspace_domain = os.environ["WORKSPACE_DOMAIN"]
     workspace = os.environ["WORKSPACE"]
 
+    total_size = 0
+
     try:
-        shutil.copytree(cat_url, "/tmp/outputs")
+        print(f"Copying files from STAC data at {cat_url}", file=sys.stderr)
+        print_disk_space()
+        # shutil.copytree(cat_url, "/tmp/outputs")
+        for root, _, files in os.walk(cat_url):
+            for file in files:
+                source_file = os.path.join(root, file)
+                destination_file = os.path.join(
+                    "/tmp/outputs", os.path.relpath(source_file, cat_url)
+                )
+                os.makedirs(os.path.dirname(destination_file), exist_ok=True)
+                shutil.copy(source_file, destination_file)
+                # Get the size of the copied file
+                file_size = os.path.getsize(destination_file)
+                total_size += file_size
+
+                print(
+                    f"Copied {source_file} to {destination_file} (Size: {file_size} bytes)",
+                    file=sys.stderr,
+                )
+                print(f"Total size of copied files: {total_size} bytes", file=sys.stderr)
+                print_disk_space()
     except FileNotFoundError:
         print(f"Failed to copy STAC data at {cat_url}", file=sys.stderr)
         raise
+    except Exception as e:
+        print(f"Some other exception was raised: {e}", file=sys.stderr)
 
     # Create S3 client
     s3_client = get_aws_client()
+
+    print("Created aws client", file=sys.stderr)
 
     # Create harvester
     stageout_harvester = StageoutHarvester(
@@ -741,5 +779,7 @@ if __name__ == "__main__":
         f"Running stageout with {cat_url} {bucket} {subfolder} {job_id} {workflow_id} {job_url}",
         file=sys.stderr,
     )
+
+    print("About to run main", file=sys.stderr)
 
     main(cat_url, bucket, subfolder, job_id, workflow_id, job_url)
