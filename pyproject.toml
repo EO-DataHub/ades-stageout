@@ -14,7 +14,7 @@
 
 [project]
 name = "eodhp-ades-stageout"
-version = "0.1.1"
+dynamic = ["version"]
 description = "ADES stageout docker image spec"
 readme = "README.md"
 
@@ -113,6 +113,9 @@ markers = [
 
 [tool.setuptools]
 packages = []
+
+[tool.setuptools-git-versioning]
+enabled = true
 
 [tool.black]
 line-length = 100
