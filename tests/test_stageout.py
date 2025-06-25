@@ -313,7 +313,7 @@ def test_get_bucket_from_namespace_exception(
 class Asset:
     def __init__(self, href):
         self.href = href
-        self.absolute_href = os.path.join("/path/to/asset", href)
+        self.absolute_href = os.path.join("/test/output/prefix", href)
 
     def get_absolute_href(self):
         return self.absolute_href
@@ -328,12 +328,12 @@ def test_construct_collection_and_upload_assets():
     mock_assets_1 = mock.Mock()
     mock_assets_2 = mock.Mock()
     mock_assets_1.items.return_value = [
-        ("test_asset_1_item_1", Asset("test_1_href_1")),
-        ("test_asset_1_item_2", Asset("test_1_href_2")),
+        ("test_asset_1_item_1", Asset("/test/output/prefix/test_1_href_1")),
+        ("test_asset_1_item_2", Asset("/test/output/prefix/test_1_href_2")),
     ]
     mock_assets_2.items.return_value = [
-        ("test_asset_2_item_1", Asset("test_2_href_1")),
-        ("test_asset_2_item_2", Asset("test_2_href_2")),
+        ("test_asset_2_item_1", Asset("/test/output/prefix/test_2_href_1")),
+        ("test_asset_2_item_2", Asset("/test/output/prefix/test_2_href_2")),
     ]
     mock_item_1 = mock.Mock()
     mock_item_2 = mock.Mock()
@@ -372,6 +372,7 @@ def test_construct_collection_and_upload_assets():
         cat_id,
         mock_s3_client,
         s3_data,
+        "/test/output/prefix",
     )
 
     # Check calls are as expected
@@ -379,22 +380,22 @@ def test_construct_collection_and_upload_assets():
     assert mock_s3_client.upload_file.call_count == 4
     calls = mock_s3_client.upload_file.call_args_list
     assert calls[0][0] == (
-        "/path/to/asset/test_1_href_1",
+        "/test/output/prefix/test_1_href_1",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_1",
     )
     assert calls[1][0] == (
-        "/path/to/asset/test_1_href_2",
+        "/test/output/prefix/test_1_href_2",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_2",
     )
     assert calls[2][0] == (
-        "/path/to/asset/test_2_href_1",
+        "/test/output/prefix/test_2_href_1",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_1",
     )
     assert calls[3][0] == (
-        "/path/to/asset/test_2_href_2",
+        "/test/output/prefix/test_2_href_2",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_2",
     )
@@ -437,7 +438,7 @@ def test_construct_collection_and_upload_assets_external_links():
     mock_collection = mock.Mock()
     mock_assets_1 = mock.Mock()
     mock_assets_1.items.return_value = [
-        ("test_asset_1_item_1", Asset("test_1_href_1")),
+        ("test_asset_1_item_1", Asset("/test/output/prefix/test_1_href_1")),
     ]
     mock_item_1 = mock.Mock()
     mock_item_1.set_collection.return_value = None
@@ -474,6 +475,7 @@ def test_construct_collection_and_upload_assets_external_links():
         cat_id,
         mock_s3_client,
         s3_data,
+        "/test/output/prefix",
     )
 
     # Check calls are as expected
@@ -481,7 +483,7 @@ def test_construct_collection_and_upload_assets_external_links():
     assert mock_s3_client.upload_file.call_count == 1
     calls = mock_s3_client.upload_file.call_args_list
     assert calls[0][0] == (
-        "/path/to/asset/test_1_href_1",
+        "/test/output/prefix/test_1_href_1",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_1",
     )
@@ -508,12 +510,12 @@ def test_construct_collection_and_upload_assets_directory(
     mock_assets_2 = mock.Mock()
     # Here test_1_href_1 is refering to a directory e.g. a zarr directory
     mock_assets_1.items.return_value = [
-        ("test_asset_1_item_1", Asset("test_1_href_1")),
-        ("test_asset_1_item_2", Asset("test_1_href_2")),
+        ("test_asset_1_item_1", Asset("/test/output/prefix/test_1_href_1")),
+        ("test_asset_1_item_2", Asset("/test/output/prefix/test_1_href_2")),
     ]
     mock_assets_2.items.return_value = [
-        ("test_asset_2_item_1", Asset("test_2_href_1")),
-        ("test_asset_2_item_2", Asset("test_2_href_2")),
+        ("test_asset_2_item_1", Asset("/test/output/prefix/test_2_href_1")),
+        ("test_asset_2_item_2", Asset("/test/output/prefix/test_2_href_2")),
     ]
     mock_item_1 = mock.Mock()
     mock_item_2 = mock.Mock()
@@ -552,6 +554,7 @@ def test_construct_collection_and_upload_assets_directory(
         cat_id,
         mock_s3_client,
         s3_data,
+        "/test/output/prefix",
     )
 
     # Check calls are as expected
@@ -559,25 +562,25 @@ def test_construct_collection_and_upload_assets_directory(
     calls = mock_upload_directory.call_args_list
     assert calls[0][0] == (
         mock_s3_client,
-        "/path/to/asset/test_1_href_1",
+        "/test/output/prefix/test_1_href_1",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_1",
     )
     assert calls[1][0] == (
         mock_s3_client,
-        "/path/to/asset/test_1_href_2",
+        "/test/output/prefix/test_1_href_2",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_1_href_2",
     )
     assert calls[2][0] == (
         mock_s3_client,
-        "/path/to/asset/test_2_href_1",
+        "/test/output/prefix/test_2_href_1",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_1",
     )
     assert calls[3][0] == (
         mock_s3_client,
-        "/path/to/asset/test_2_href_2",
+        "/test/output/prefix/test_2_href_2",
         s3_endpoint,
         f"{workspace}/{subfolder}/{cat_id}/test_collection/test_2_href_2",
     )
@@ -593,14 +596,14 @@ def test_construct_collection_and_upload_assets_exception(capsys):
     mock_collection = mock.Mock()
     mock_assets_1 = mock.Mock()
     mock_assets_2 = mock.Mock()
-    asset_1_1 = mock.Mock(href="test_1_href_1")
-    asset_1_1.get_absolute_href.return_value = "/abs/path/to/test_1_href_1"
-    asset_1_2 = mock.Mock(href="test_1_href_2")
-    asset_1_2.get_absolute_href.return_value = "/abs/path/to/test_1_href_2"
-    asset_2_1 = mock.Mock(href="test_2_href_1")
-    asset_2_1.get_absolute_href.return_value = "/abs/path/to/test_2_href_1"
-    asset_2_2 = mock.Mock(href="test_2_href_2")
-    asset_2_2.get_absolute_href.return_value = "/abs/path/to/test_2_href_2"
+    asset_1_1 = mock.Mock(href="/test/output/prefix/test_1_href_1")
+    asset_1_1.get_absolute_href.return_value = "/test/output/prefix/test_1_href_1"
+    asset_1_2 = mock.Mock(href="/test/output/prefix/test_1_href_2")
+    asset_1_2.get_absolute_href.return_value = "/test/output/prefix/test_1_href_2"
+    asset_2_1 = mock.Mock(href="/test/output/prefix/test_2_href_1")
+    asset_2_1.get_absolute_href.return_value = "/test/output/prefix/test_2_href_1"
+    asset_2_2 = mock.Mock(href="/test/output/prefix/test_2_href_2")
+    asset_2_2.get_absolute_href.return_value = "/test/output/prefix/test_2_href_2"
     # Here test_1_href_1 is refering to a directory e.g. a zarr directory
     mock_assets_1.items.return_value = [
         ("test_asset_1_item_1", asset_1_1),
@@ -649,24 +652,25 @@ def test_construct_collection_and_upload_assets_exception(capsys):
         cat_id,
         mock_s3_client,
         s3_data,
+        "/test/output/prefix",
     )
 
     # Check exceptions are handled correctly
     error_out = capsys.readouterr().err
     assert (
-        f"Failed to upload asset /abs/path/to/test_1_href_1 to {s3_endpoint} at {subfolder}: "
+        f"Failed to upload asset /test/output/prefix/test_1_href_1 to {s3_endpoint} at {subfolder}: "
         in error_out
     )
     assert (
-        f"Failed to upload asset /abs/path/to/test_1_href_2 to {s3_endpoint} at {subfolder}: "
+        f"Failed to upload asset /test/output/prefix/test_1_href_2 to {s3_endpoint} at {subfolder}: "
         in error_out
     )
     assert (
-        f"Failed to upload asset /abs/path/to/test_2_href_1 to {s3_endpoint} at {subfolder}: "
+        f"Failed to upload asset /test/output/prefix/test_2_href_1 to {s3_endpoint} at {subfolder}: "
         in error_out
     )
     assert (
-        f"Failed to upload asset /abs/path/to/test_2_href_2 to {s3_endpoint} at {subfolder}: "
+        f"Failed to upload asset /test/output/prefix/test_2_href_2 to {s3_endpoint} at {subfolder}: "
         in error_out
     )
 
@@ -837,10 +841,10 @@ def test_main_access_point_no_collection(
 
     mock_item_1 = mock.Mock()
     mock_item_1.id = "test_item_1"
-    mock_item_1.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset1")}
+    mock_item_1.assets = {"asset_key": mock.Mock(href="/test/output/prefix/asset1")}
     mock_item_2 = mock.Mock()
     mock_item_2.id = "test_item_2"
-    mock_item_2.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset2")}
+    mock_item_2.assets = {"asset_key": mock.Mock(href="/test/output/prefix/asset2")}
 
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
@@ -904,6 +908,7 @@ def test_main_access_point_no_collection(
         "test_catalog",
         mock_boto3_client_instance,
         expected_s3_data,
+        cat_url,
     )
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
@@ -972,6 +977,7 @@ def test_main_access_point_with_collection(
     mock_get_aws_client,
     mock_os_listdir,
     setenvvar,
+    capsys,
 ):
     """Test main function with no AWS credentials, instead using access point"""
 
@@ -979,7 +985,7 @@ def test_main_access_point_with_collection(
     job_id = "1234-5678"
     job_url = "https://test-url/catalogs/user/catalogs/workspace/jobs/job-id"
     collection_id = f"col_{job_id}"
-    cat_url = "test_catalog_url"
+    cat_url = "/test/output/prefix"
     bucket = "test_bucket"
     subfolder = "test_subfolder"
     workspace = "test_workspace"
@@ -993,14 +999,14 @@ def test_main_access_point_with_collection(
 
     mock_item_1 = mock.Mock()
     mock_item_1.id = "test_item_1"
-    mock_asset_1 = mock.Mock(href="s3://bucket/path/to/asset1")
-    mock_asset_1.get_absolute_href.return_value = "/path/to/asset1"
+    mock_asset_1 = mock.Mock(href="/test/output/prefix/asset1")
+    mock_asset_1.get_absolute_href.return_value = "/test/output/prefix/asset1"
     mock_item_1.get_assets.return_value = {"asset_key": mock_asset_1}
     mock_item_1.links = [mock_link]
     mock_item_2 = mock.Mock()
     mock_item_2.id = "test_item_2"
-    mock_asset_2 = mock.Mock(href="s3://bucket/path/to/asset2")
-    mock_asset_2.get_absolute_href.return_value = "/path/to/asset2"
+    mock_asset_2 = mock.Mock(href="/test/output/prefix/asset2")
+    mock_asset_2.get_absolute_href.return_value = "/test/output/prefix/asset2"
     mock_item_2.get_assets.return_value = {"asset_key": mock_asset_2}
     mock_item_2.links = [mock_link]
 
@@ -1084,6 +1090,17 @@ def test_main_access_point_with_collection(
     mock_item_1.add_asset.assert_called_once_with("asset_key", mock_asset_1)
     mock_item_2.add_asset.assert_called_once_with("asset_key", mock_asset_2)
 
+    error_out = capsys.readouterr().err
+
+    assert (
+        f"Replacing asset href with https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/{collection_id}/asset1"
+        in error_out
+    )
+    assert (
+        f"Replacing asset href with https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/{collection_id}/asset2"
+        in error_out
+    )
+
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
@@ -1141,6 +1158,7 @@ def test_main_access_point_blank_catalog_id(
     mock_get_aws_client,
     mock_os_listdir,
     setenvvar,
+    capsys,
 ):
     """Test main function with no AWS credentials, instead using access point"""
 
@@ -1162,14 +1180,14 @@ def test_main_access_point_blank_catalog_id(
 
     mock_item_1 = mock.Mock()
     mock_item_1.id = "test_item_1"
-    mock_asset_1 = mock.Mock(href="s3://bucket/path/to/asset1")
-    mock_asset_1.get_absolute_href.return_value = "/path/to/asset1"
+    mock_asset_1 = mock.Mock(href="/test/output/prefix/asset1")
+    mock_asset_1.get_absolute_href.return_value = "/test/output/prefix/asset1"
     mock_item_1.get_assets.return_value = {"asset_key": mock_asset_1}
     mock_item_1.links = [mock_link]
     mock_item_2 = mock.Mock()
     mock_item_2.id = "test_item_2"
-    mock_asset_2 = mock.Mock(href="s3://bucket/path/to/asset2")
-    mock_asset_2.get_absolute_href.return_value = "/path/to/asset2"
+    mock_asset_2 = mock.Mock(href="/test/output/prefix/asset2")
+    mock_asset_2.get_absolute_href.return_value = "/test/output/prefix/asset2"
     mock_item_2.get_assets.return_value = {"asset_key": mock_asset_2}
     mock_item_2.links = [mock_link]
 
@@ -1252,6 +1270,17 @@ def test_main_access_point_blank_catalog_id(
 
     mock_item_1.add_asset.assert_called_once_with("asset_key", mock_asset_1)
     mock_item_2.add_asset.assert_called_once_with("asset_key", mock_asset_2)
+
+    error_out = capsys.readouterr().err
+
+    assert (
+        f"Replacing asset href with https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}/{collection_id}/asset1"
+        in error_out
+    )
+    assert (
+        f"Replacing asset href with https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{expected_cat_id}/{collection_id}/asset2"
+        in error_out
+    )
 
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
@@ -1337,6 +1366,7 @@ def test_main_no_access_point(
     mock_get_aws_client,
     mock_os_listdir,
     setenvvar,
+    capsys,
 ):
     """Test main function with AWS credentials"""
 
@@ -1384,10 +1414,10 @@ def test_main_no_access_point(
 
     mock_item_1 = mock.Mock()
     mock_item_1.id = "test_item_1"
-    mock_item_1.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset1")}
+    mock_item_1.assets = {"asset_key": mock.Mock(href="/test/output/prefix/asset1")}
     mock_item_2 = mock.Mock()
     mock_item_2.id = "test_item_2"
-    mock_item_2.assets = {"asset_key": mock.Mock(href="s3://bucket/path/to/asset2")}
+    mock_item_2.assets = {"asset_key": mock.Mock(href="/test/output/prefix/asset2")}
 
     mock_collection = mock.Mock()
     mock_collection.id = "collection"
@@ -1451,7 +1481,9 @@ def test_main_no_access_point(
         "test_catalog",
         mock_boto3_client_instance,
         expected_s3_data,
+        cat_url,
     )
+
     calls = mock_pystac_write_file.call_args_list
     assert calls[0][0][0] == mock_collection
     assert calls[0][1] == {
@@ -1487,7 +1519,7 @@ def test_main_no_access_point(
 def test_upload_annotation_success(mock_os_listdir, mock_normpath, mock_join, mock_open):
     s3_client = mock.Mock()
     s3_client.upload_file.return_value = None
-    mock_join.return_value = "/tmp/outputs/annotations.json"
+    mock_join.return_value = "/test/output/prefix/annotations.json"
     mock_normpath.return_value = "workspace/subfolder/cat_id/annotations.json"
     mock_os_listdir.return_value = ["file-annotations.json"]
     s3_endpoint = "s3_endpoint"
@@ -1496,10 +1528,14 @@ def test_upload_annotation_success(mock_os_listdir, mock_normpath, mock_join, mo
     cat_id = "cat_id"
     file_name = "annotations.json"
 
-    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name)
+    result = upload_annotation(
+        s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix"
+    )
     assert result
     s3_client.upload_file.assert_called_once_with(
-        "/tmp/outputs/annotations.json", s3_endpoint, "workspace/subfolder/cat_id/annotations.json"
+        "/test/output/prefix/annotations.json",
+        s3_endpoint,
+        "workspace/subfolder/cat_id/annotations.json",
     )
 
 
@@ -1510,7 +1546,7 @@ def test_upload_annotation_success(mock_os_listdir, mock_normpath, mock_join, mo
 def test_upload_annotation_invalid_json(mock_os_listdir, mock_normpath, mock_join, mock_open):
     s3_client = mock.Mock()
     s3_client.upload_file.return_value = None
-    mock_join.return_value = "/tmp/outputs/annotations.json"
+    mock_join.return_value = "/test/output/prefix/annotations.json"
     mock_normpath.return_value = "workspace/subfolder/cat_id/annotations.json"
     mock_os_listdir.return_value = ["file-annotations.json"]
     s3_endpoint = "s3_endpoint"
@@ -1519,7 +1555,9 @@ def test_upload_annotation_invalid_json(mock_os_listdir, mock_normpath, mock_joi
     cat_id = "cat_id"
     file_name = "annotations.json"
 
-    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name)
+    result = upload_annotation(
+        s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix"
+    )
     assert not result
     assert s3_client.upload_file.call_count == 0
 
@@ -1531,7 +1569,7 @@ def test_upload_annotation_invalid_json(mock_os_listdir, mock_normpath, mock_joi
 def test_upload_annotation_file_not_found(mock_os_listdir, mock_normpath, mock_join, mock_open):
     s3_client = mock.Mock()
     s3_client.upload_file.return_value = None
-    mock_join.return_value = "/tmp/outputs/annotations.json"
+    mock_join.return_value = "/test/output/prefix/annotations.json"
     mock_normpath.return_value = "workspace/subfolder/cat_id/annotations.json"
     mock_os_listdir.return_value = ["file-annotations.json"]
     s3_endpoint = "s3_endpoint"
@@ -1540,7 +1578,9 @@ def test_upload_annotation_file_not_found(mock_os_listdir, mock_normpath, mock_j
     cat_id = "cat_id"
     file_name = "annotations.json"
 
-    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name)
+    result = upload_annotation(
+        s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix"
+    )
     assert not result
     assert s3_client.upload_file.call_count == 0
 
@@ -1568,6 +1608,7 @@ def test_handle_annotations_success(mock_os_listdir, mock_upload_annotation):
         subfolder,
         catalog_id,
         job_id,
+        "/test/output/prefix",
     )
     assert result == added_annotations
 
@@ -1591,6 +1632,7 @@ def test_handle_annotations_no_annotations(mock_os_listdir, mock_upload_annotati
         subfolder,
         catalog_id,
         job_id,
+        "/test/output/prefix",
     )
     assert not result
 
@@ -1629,7 +1671,7 @@ def test_handle_stac_outputs_no_collection_success(
     mock_catalog.get_self_href.return_value = (
         f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
     )
-    mock_os_path_join.return_value = "/tmp/outputs/catalog.json"
+    mock_os_path_join.return_value = "/test/output/prefix/catalog.json"
     mock_read_file.return_value = mock_catalog
 
     # Mock the collection construction and upload
@@ -1652,9 +1694,10 @@ def test_handle_stac_outputs_no_collection_success(
         subfolder,
         job_id,
         "test-workflow",
+        "/test/output/prefix",
     )
     assert result
-    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    mock_read_file.assert_called_once_with("/test/output/prefix/catalog.json")
     mock_write_file.assert_any_call(
         mock_collection,
         dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/col_{job_id}.json",
@@ -1715,7 +1758,7 @@ def test_handle_stac_outputs_with_collection_success(
     mock_catalog.get_self_href.return_value = (
         f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/catalog.json"
     )
-    mock_os_path_join.return_value = "/tmp/outputs/catalog.json"
+    mock_os_path_join.return_value = "/test/output/prefix/catalog.json"
     mock_read_file.return_value = mock_catalog
 
     # Mock the upload_items function
@@ -1730,9 +1773,10 @@ def test_handle_stac_outputs_with_collection_success(
         subfolder,
         job_id,
         "test-workflow",
+        "/test/output/prefix",
     )
     assert result
-    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    mock_read_file.assert_called_once_with("/test/output/prefix/catalog.json")
     mock_write_file.assert_any_call(
         mock_collection,
         dest_href=f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/test_catalog/collection-id.json",
@@ -1763,10 +1807,11 @@ def test_handle_stac_outputs_file_not_found(mock_read_file):
         subfolder,
         job_id,
         "test-workflow",
+        "/test/output/prefix",
     )
     assert result[0] == ""
     assert not result[1]
-    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    mock_read_file.assert_called_once_with("/test/output/prefix/catalog.json")
 
 
 @patch("pystac.read_file")
@@ -1791,10 +1836,11 @@ def test_handle_stac_outputs_stac_type_error(mock_read_file):
         subfolder,
         job_id,
         "test-workflow",
+        "/test/output/prefix",
     )
     assert result[0] == ""
     assert not result[1]
-    mock_read_file.assert_called_once_with("/tmp/outputs/catalog.json")
+    mock_read_file.assert_called_once_with("/test/output/prefix/catalog.json")
 
 
 @patch("pystac.write_file")
