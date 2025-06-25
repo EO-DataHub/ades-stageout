@@ -18,8 +18,8 @@ dynamic = ["version"]
 description = "ADES stageout docker image spec"
 readme = "README.md"
 
-# Our target version is Python 3.12, but it may work with earlier versions.
-requires-python = ">=3.12"
+# Our target version is Python 3.11, but it may work with earlier versions.
+requires-python = ">=3.11"
 
 license = {file = "LICENSE"}
 
