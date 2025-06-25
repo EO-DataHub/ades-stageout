@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_ROOT = os.getenv("OUTPUT_ROOT", "user")
 
+DELETE_FILES_FROM_PVC = os.getenv("DELETE_FILES_FROM_PVC", "true").lower() == "true"
+
 
 class CustomStacIO(DefaultStacIO):
     """Custom STAC IO class that uses boto3 to read from S3."""
@@ -175,11 +177,12 @@ def handle_assets(
     workspace: str,
     workspace_domain: str,
     bucket: str,
+    output_prefix: str,
 ):
     for key, asset in item.get_assets().items():
-        if asset.href.startswith("/tmp/outputs/"):
+        if asset.href.startswith(output_prefix):
             # Preserve file structure for local outputs
-            relative_path = asset.href.replace("/tmp/outputs/", "", 1)
+            relative_path = asset.href.replace(output_prefix, "", 1)
         else:
             # Compress to the file name for outputs from other sources
             relative_path = os.path.basename(asset.href)
@@ -217,7 +220,7 @@ def handle_assets(
                 s3_path = s3_path[len(prefix) :]
             # Replace href with workspace-accessible url
             asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
-            print(f"Replacing item href with {asset.href}", file=sys.stderr)
+            print(f"Replacing asset href with {asset.href}", file=sys.stderr)
             item.add_asset(key, asset)
     item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
     item.set_self_href(item_href)
@@ -229,6 +232,7 @@ def construct_collection_and_upload_assets(
     cat_id: str,
     s3_client: boto3.client,
     s3_data: dict,
+    output_prefix: str,
 ) -> pystac.Collection:
 
     s3_endpoint = s3_data["s3_endpoint"]
@@ -253,6 +257,7 @@ def construct_collection_and_upload_assets(
             workspace,
             workspace_domain,
             bucket,
+            output_prefix + "/",
         )
 
     return collection
@@ -298,6 +303,7 @@ def generate_new_collection(
     cat_id,
     job_id,
     workflow_id,
+    output_prefix,
 ) -> list[str]:
     # create a STAC collection for the process
     date = datetime.now().strftime("%Y-%m-%d")
@@ -333,7 +339,9 @@ def generate_new_collection(
         "bucket": bucket,
     }
 
-    collection = construct_collection_and_upload_assets(cat, collection, cat_id, s3_client, s3_data)
+    collection = construct_collection_and_upload_assets(
+        cat, collection, cat_id, s3_client, s3_data, output_prefix
+    )
 
     collection.update_extent_from_items()
 
@@ -361,9 +369,11 @@ def generate_new_collection(
     return files_for_harvesting
 
 
-def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name) -> bool:
+def upload_annotation(
+    s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, output_prefix
+) -> bool:
     try:
-        with open(os.path.join("/tmp/outputs", file_name), "r") as file:
+        with open(os.path.join(output_prefix, file_name), "r") as file:
             try:
                 # Check if file is valid JSON
                 _ = json.load(file)
@@ -386,7 +396,7 @@ def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file
     print(f"Uploading annotations to {s3_path}", file=sys.stderr)
     try:
         s3_client.upload_file(
-            os.path.join("/tmp/outputs", file_name),
+            os.path.join(output_prefix, file_name),
             s3_endpoint,
             s3_path,
         )
@@ -398,7 +408,7 @@ def upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file
 
 
 def handle_annotations(
-    s3_client, s3_endpoint, workspace, subfolder, catalog_id, job_id
+    s3_client, s3_endpoint, workspace, subfolder, catalog_id, job_id, output_prefix
 ) -> list[str]:
     """
     Handle annotations defined in the annotations.json file
@@ -410,9 +420,11 @@ def handle_annotations(
         cat_id = job_id
 
     # Identify all annotations files
-    for file_name in os.listdir("/tmp/outputs"):
+    for file_name in os.listdir(output_prefix):
         if file_name.endswith("-annotations.json"):
-            if upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name):
+            if upload_annotation(
+                s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, output_prefix
+            ):
                 added_annotations.append(f"{workspace}/{subfolder}/{cat_id}/{file_name}")
 
     # Send annotations to ingester
@@ -434,6 +446,7 @@ def handle_current_collection(
     subfolder,
     workflow_id,
     job_id,
+    output_prefix,
 ) -> list[str]:
 
     files_for_harvesting = []
@@ -493,7 +506,7 @@ def handle_current_collection(
 
                 if not license_href.startswith("http"):
                     # It's a relative link, read the file
-                    license_path = os.path.join("/tmp/outputs", license_href)
+                    license_path = os.path.join(output_prefix, license_href)
                     with open(license_path, "r") as file:
                         license_content = file.read()
                 else:
@@ -549,6 +562,7 @@ def handle_current_collection(
                 workspace,
                 workspace_domain,
                 bucket,
+                output_prefix + "/",
             )
 
         files_for_harvesting += upload_items(
@@ -576,12 +590,13 @@ def handle_stac_outputs(
     subfolder,
     job_id,
     workflow_id,
+    output_prefix,
 ) -> tuple:
 
     try:
-        cat = pystac.read_file(os.path.join("/tmp/outputs", "catalog.json"))
+        cat = pystac.read_file(os.path.join(output_prefix, "catalog.json"))
     except FileNotFoundError:
-        print("Failed find STAC Catalog at /tmp/catalog", file=sys.stderr)
+        print(f"Failed find STAC Catalog at {output_prefix}", file=sys.stderr)
         return "", False
     except pystac.STACTypeError:
         print("Failed to read STAC Catalog", file=sys.stderr)
@@ -626,6 +641,7 @@ def handle_stac_outputs(
             cat_id,
             job_id,
             workflow_id,
+            output_prefix,
         )
     else:
         # Use collections already present in the catalog
@@ -642,6 +658,7 @@ def handle_stac_outputs(
             subfolder,
             workflow_id,
             job_id,
+            output_prefix,
         )
     # Upload catalog to S3
     print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
@@ -662,11 +679,8 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
     workspace_domain = os.environ["WORKSPACE_DOMAIN"]
     workspace = os.environ["WORKSPACE"]
 
-    try:
-        shutil.copytree(cat_url, "/tmp/outputs")
-    except FileNotFoundError:
-        print(f"Failed to copy STAC data at {cat_url}", file=sys.stderr)
-        raise
+    # Trim the output path
+    cat_url = cat_url.rstrip("/")
 
     # Create S3 client
     s3_client = get_aws_client()
@@ -690,11 +704,19 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
     StacIO.set_default(custom_stac_io_factory(s3_endpoint, workspace, workspace_domain))
 
     cat_id, output_keys = handle_stac_outputs(
-        s3_client, s3_endpoint, workspace_domain, workspace, bucket, subfolder, job_id, workflow_id
+        s3_client,
+        s3_endpoint,
+        workspace_domain,
+        workspace,
+        bucket,
+        subfolder,
+        job_id,
+        workflow_id,
+        cat_url,
     )
 
     output_annotations = handle_annotations(
-        s3_client, s3_endpoint, workspace, subfolder, cat_id, job_id
+        s3_client, s3_endpoint, workspace, subfolder, cat_id, job_id, cat_url
     )
 
     if not output_keys and not output_annotations:
@@ -725,6 +747,11 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
             "ades-outputs-annotations",
             job_id,
         )
+
+    if DELETE_FILES_FROM_PVC:
+        # Delete files from PVC
+        print(f"Deleting files from workflow PVC mounted at {cat_url}", file=sys.stderr)
+        shutil.rmtree(cat_url, ignore_errors=True)
 
 
 if __name__ == "__main__":
