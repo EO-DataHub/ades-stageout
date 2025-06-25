@@ -18,8 +18,8 @@ dynamic = ["version"]
 description = "ADES stageout docker image spec"
 readme = "README.md"
 
-# Our target version is Python 3.11, but it may work with earlier versions.
-requires-python = ">=3.11"
+# Our target version is Python 3.12, but it may work with earlier versions.
+requires-python = ">=3.12"
 
 license = {file = "LICENSE"}
 
@@ -69,7 +69,7 @@ dependencies = [
     "pystac",
     "boto3",
     "botocore",
-    "urllib3<1.27",
+    "urllib3",
     "html-sanitizer"
 ]
 
@@ -119,11 +119,11 @@ enabled = true
 
 [tool.black]
 line-length = 100
-target-version = ['py311']
+target-version = ['py312']
 
 [tool.ruff]
 line-length = 110
-target-version = "py311"
+target-version = "py312"
 select = ["E", "F", "B", "W"]
 
 exclude = [
