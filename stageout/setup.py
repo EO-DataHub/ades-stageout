@@ -10,7 +10,7 @@ setup(
         "pystac",
         "boto3",
         "botocore",
-        "urllib3<1.27",
+        "urllib3",
         "html-sanitizer",
     ],
     entry_points={
