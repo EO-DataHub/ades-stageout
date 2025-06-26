@@ -4,27 +4,27 @@
 #
 #    pip-compile
 #
-beautifulsoup4==4.13.3
+beautifulsoup4==4.13.4
     # via html-sanitizer
-boto3==1.37.16
+boto3==1.38.43
     # via eodhp-ades-stageout (pyproject.toml)
-botocore==1.37.16
+botocore==1.38.43
     # via
     #   boto3
     #   eodhp-ades-stageout (pyproject.toml)
     #   s3transfer
 cachetools==5.5.2
     # via google-auth
-certifi==2025.1.31
+certifi==2025.6.15
     # via
     #   kubernetes
     #   pulsar-client
     #   requests
-charset-normalizer==3.4.1
+charset-normalizer==3.4.2
     # via requests
-durationpy==0.9
+durationpy==0.10
     # via kubernetes
-google-auth==2.38.0
+google-auth==2.40.3
     # via kubernetes
 html-sanitizer==2.5.0
     # via eodhp-ades-stageout (pyproject.toml)
@@ -34,25 +34,25 @@ jmespath==1.0.1
     # via
     #   boto3
     #   botocore
-kubernetes==32.0.1
+kubernetes==33.1.0
     # via eodhp-ades-stageout (pyproject.toml)
-lxml==5.3.1
+lxml==5.4.0
     # via
     #   html-sanitizer
     #   lxml-html-clean
-lxml-html-clean==0.4.1
+lxml-html-clean==0.4.2
     # via html-sanitizer
-oauthlib==3.2.2
+oauthlib==3.3.1
     # via
     #   kubernetes
     #   requests-oauthlib
-pulsar-client==3.6.1
+pulsar-client==3.7.0
     # via eodhp-ades-stageout (pyproject.toml)
 pyasn1==0.6.1
     # via
     #   pyasn1-modules
     #   rsa
-pyasn1-modules==0.4.1
+pyasn1-modules==0.4.2
     # via google-auth
 pystac==1.10.1
     # via eodhp-ades-stageout (pyproject.toml)
@@ -63,25 +63,25 @@ python-dateutil==2.9.0.post0
     #   pystac
 pyyaml==6.0.2
     # via kubernetes
-requests==2.32.3
+requests==2.32.4
     # via
     #   kubernetes
     #   requests-oauthlib
 requests-oauthlib==2.0.0
     # via kubernetes
-rsa==4.9
+rsa==4.9.1
     # via google-auth
-s3transfer==0.11.4
+s3transfer==0.13.0
     # via boto3
 six==1.17.0
     # via
     #   kubernetes
     #   python-dateutil
-soupsieve==2.6
+soupsieve==2.7
     # via beautifulsoup4
-typing-extensions==4.12.2
+typing-extensions==4.14.0
     # via beautifulsoup4
-urllib3==1.26.20
+urllib3==2.5.0
     # via
     #   botocore
     #   eodhp-ades-stageout (pyproject.toml)
