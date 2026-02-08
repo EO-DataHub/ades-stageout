@@ -2,24 +2,23 @@ import json
 import logging
 import sys
 
-import boto3
+import botocore.client
 import pulsar
 
 logger = logging.getLogger(__name__)
 
 
 class StageoutHarvester:
-
     def __init__(
         self,
-        s3_client: boto3.client,
+        s3_client: botocore.client.BaseClient,
         bucket: str,
-        pulsar_url: str,
+        pulsar_url: str | None,
         output_root: str,
         job_id: str,
         job_url: str,
         prefix: str = "workflow-harvester",
-    ):
+    ) -> None:
         self.s3_client = s3_client
         self.bucket = bucket
         self.pulsar_url = pulsar_url
@@ -28,7 +27,9 @@ class StageoutHarvester:
         self.job_url = job_url
         self.prefix = prefix
 
-    def harvest_files(self, output_keys: list[str] = None, output_files: list = None):
+    def harvest_files(self, output_keys: list[str] | None = None, output_files: list[str] | None = None) -> list[str]:
+        if output_keys is None:
+            return []
         print("Now harvesting files", file=sys.stderr)
         harvested_keys = []
         for file_key in output_keys:
@@ -42,10 +43,7 @@ class StageoutHarvester:
                 new_key = f"{self.prefix}/{self.job_id}/{file_key.replace('/', '/catalogs/')}"
             elif file_dict["type"] == "Collection" or file_key.endswith("-annotations.json"):
                 file_path, file_name = file_key.rsplit("/", 1)
-                new_key = (
-                    f"{self.prefix}/{self.job_id}/{file_path.replace('/', '/catalogs/')}"
-                    f"/collections/{file_name}"
-                )
+                new_key = f"{self.prefix}/{self.job_id}/{file_path.replace('/', '/catalogs/')}/collections/{file_name}"
             elif file_dict["type"] == "Feature":
                 file_path, collection_name, file_name = file_key.rsplit("/", 2)
                 new_key = (
@@ -58,9 +56,7 @@ class StageoutHarvester:
             # Upload file to s3
             print(f"Uploading file to {new_key}", file=sys.stderr)
             try:
-                self.s3_client.put_object(
-                    Bucket=self.bucket, Key=new_key, Body=json.dumps(file_dict)
-                )
+                self.s3_client.put_object(Bucket=self.bucket, Key=new_key, Body=json.dumps(file_dict))
                 harvested_keys.append(new_key)
                 print(f"File {file_key} harvested successfully", file=sys.stderr)
             except Exception as e:
@@ -74,7 +70,7 @@ class StageoutHarvester:
         topic: str,
         name: str,
         job_id: str,
-    ):
+    ) -> None:
         pulsar_client = pulsar.Client(self.pulsar_url)
         producer = pulsar_client.create_producer(topic=topic, producer_name=f"{name}-{job_id}")
         message_dict = {

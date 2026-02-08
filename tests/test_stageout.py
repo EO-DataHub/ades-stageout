@@ -22,7 +22,7 @@ from stageout.__main__ import (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def setenvvar(monkeypatch):
     with mock.patch.dict(os.environ, clear=True):
         envvars = {
@@ -121,7 +121,7 @@ def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_sta
 
     # Configure expected arguments
     expected_args = {
-        "Body": "test_text".encode("UTF-8"),
+        "Body": b"test_text",
         "Bucket": "example/endpoint/for/test",
         "Key": "path",
         "ContentType": "application/geo+json",
@@ -143,9 +143,7 @@ def test_custom_stac_write_text_s3(mock_botocore_session_class, mock_default_sta
 @patch("pystac.stac_io.DefaultStacIO")
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.__main__.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_write_text_workspace_url(
-    mock_botocore_session_class, mock_default_stacio, setenvvar
-):
+def test_custom_stac_write_text_workspace_url(mock_botocore_session_class, mock_default_stacio, setenvvar):
 
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -157,16 +155,14 @@ def test_custom_stac_write_text_workspace_url(
 
     # Configure expected arguments
     expected_args_1 = {
-        "Body": "test_text".encode("UTF-8"),
+        "Body": b"test_text",
         "Bucket": "bucket",
         "Key": "workspace/test_dest/path",
         "ContentType": "application/geo+json",
     }
 
     # Instantiate CustomStacIO
-    test_stac_io = CustomStacIO(
-        s3_endpoint="bucket", workspace="workspace", workspace_domain="domain.com"
-    )
+    test_stac_io = CustomStacIO(s3_endpoint="bucket", workspace="workspace", workspace_domain="domain.com")
 
     # Test write_text
     test_stac_io.write_text(
@@ -186,9 +182,7 @@ def test_custom_stac_write_text_workspace_url(
 @patch("pystac.stac_io.DefaultStacIO.write_text")
 @patch("botocore.session.Session")
 @patch("sys.argv", ["stageout.__main__.py", "catalog_url", "bucket", "subfolder", "collection_id"])
-def test_custom_stac_write_text_super(
-    mock_botocore_session_class, mock_default_stacio_write_text, setenvvar
-):
+def test_custom_stac_write_text_super(mock_botocore_session_class, mock_default_stacio_write_text, setenvvar):
     """Test the CustomStacIO write text function with super call, not using S3"""
     # Create mocks
     mock_botocore_session = mock.Mock()
@@ -205,15 +199,11 @@ def test_custom_stac_write_text_super(
     test_stac_io = CustomStacIO()
 
     # Test write_text
-    test_stac_io.write_text(
-        "https://test_dest", "test_text", "args_1", "arg_2", kwarg_1="kwarg_1", kwarg_2="kwarg_2"
-    )
+    test_stac_io.write_text("https://test_dest", "test_text", "args_1", "arg_2", kwarg_1="kwarg_1", kwarg_2="kwarg_2")
 
     # Assertions
     assert mock_default_stacio_write_text.call_count == 1
-    mock_default_stacio_write_text.assert_called_once_with(
-        *expected_args, kwarg_1="kwarg_1", kwarg_2="kwarg_2"
-    )
+    mock_default_stacio_write_text.assert_called_once_with(*expected_args, kwarg_1="kwarg_1", kwarg_2="kwarg_2")
 
 
 @patch("os.walk")
@@ -270,9 +260,7 @@ class MockConfigMapResponse:
 
 @patch("kubernetes.client.CoreV1Api")
 @patch("kubernetes.config.load_incluster_config")
-def test_get_bucket_from_namespace_success(
-    mock_kubernetes_config_load, mock_kubernetes_client_coreV1Api
-):
+def test_get_bucket_from_namespace_success(mock_kubernetes_config_load, mock_kubernetes_client_coreV1Api):
 
     # Create mocks
     mock_CoreV1Api = mock.Mock()
@@ -290,15 +278,11 @@ def test_get_bucket_from_namespace_success(
 
 @patch("kubernetes.client.CoreV1Api")
 @patch("kubernetes.config.load_incluster_config")
-def test_get_bucket_from_namespace_exception(
-    mock_kubernetes_config_load, mock_kubernetes_client_coreV1Api, capsys
-):
+def test_get_bucket_from_namespace_exception(mock_kubernetes_config_load, mock_kubernetes_client_coreV1Api, capsys):
 
     # Create mocks
     mock_CoreV1Api = mock.Mock()
-    mock_CoreV1Api.read_namespaced_config_map.side_effect = ApiException(
-        status=400, reason="Some Reason"
-    )
+    mock_CoreV1Api.read_namespaced_config_map.side_effect = ApiException(status=400, reason="Some Reason")
     mock_kubernetes_client_coreV1Api.return_value = mock_CoreV1Api
     mock_kubernetes_config_load.return_value = None
 
@@ -449,9 +433,7 @@ def test_construct_collection_and_upload_assets_external_links():
     mock_collection.id = "test_collection"
 
     mock_s3_client = mock.Mock()
-    mock_s3_client.upload_file.side_effect = (
-        Exception  # generic exception to force code to ignore this asset href
-    )
+    mock_s3_client.upload_file.side_effect = Exception  # generic exception to force code to ignore this asset href
 
     # Configure test variables
     cat_id = "test_catalog"
@@ -497,9 +479,7 @@ def test_construct_collection_and_upload_assets_external_links():
 
 @patch("stageout.__main__.upload_directory")
 @patch("os.path.isdir")
-def test_construct_collection_and_upload_assets_directory(
-    mock_os_path_isdir, mock_upload_directory
-):
+def test_construct_collection_and_upload_assets_directory(mock_os_path_isdir, mock_upload_directory):
     """Test construct_collection_and_upload_assets function with assets that are directories"""
 
     # Configure mocks
@@ -657,22 +637,10 @@ def test_construct_collection_and_upload_assets_exception(capsys):
 
     # Check exceptions are handled correctly
     error_out = capsys.readouterr().err
-    assert (
-        f"Failed to upload asset /test/output/prefix/test_1_href_1 to {s3_endpoint} at {subfolder}: "
-        in error_out
-    )
-    assert (
-        f"Failed to upload asset /test/output/prefix/test_1_href_2 to {s3_endpoint} at {subfolder}: "
-        in error_out
-    )
-    assert (
-        f"Failed to upload asset /test/output/prefix/test_2_href_1 to {s3_endpoint} at {subfolder}: "
-        in error_out
-    )
-    assert (
-        f"Failed to upload asset /test/output/prefix/test_2_href_2 to {s3_endpoint} at {subfolder}: "
-        in error_out
-    )
+    assert f"Failed to upload asset /test/output/prefix/test_1_href_1 to {s3_endpoint} at {subfolder}: " in error_out
+    assert f"Failed to upload asset /test/output/prefix/test_1_href_2 to {s3_endpoint} at {subfolder}: " in error_out
+    assert f"Failed to upload asset /test/output/prefix/test_2_href_1 to {s3_endpoint} at {subfolder}: " in error_out
+    assert f"Failed to upload asset /test/output/prefix/test_2_href_2 to {s3_endpoint} at {subfolder}: " in error_out
 
     # Check output result
     assert result
@@ -848,9 +816,7 @@ def test_main_access_point_no_collection(
 
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
-    mock_collection.get_self_href.return_value = (
-        f"s3://bucket-name/{subfolder}/test_catalog/{collection_id}.json"
-    )
+    mock_collection.get_self_href.return_value = f"s3://bucket-name/{subfolder}/test_catalog/{collection_id}.json"
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_pystac_Collection.return_value = mock_collection
 
@@ -1012,9 +978,7 @@ def test_main_access_point_with_collection(
 
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
-    mock_collection.get_self_href.return_value = (
-        f"s3://bucket-name/{subfolder}/test_catalog/{collection_id}.json"
-    )
+    mock_collection.get_self_href.return_value = f"s3://bucket-name/{subfolder}/test_catalog/{collection_id}.json"
     mock_collection.id = collection_id
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
@@ -1193,9 +1157,7 @@ def test_main_access_point_blank_catalog_id(
 
     mock_collection = mock.Mock()
     mock_collection.update_extent_from_items.return_value = None
-    mock_collection.get_self_href.return_value = (
-        f"s3://bucket-name/{subfolder}/test_catalog/{collection_id}.json"
-    )
+    mock_collection.get_self_href.return_value = f"s3://bucket-name/{subfolder}/test_catalog/{collection_id}.json"
     mock_collection.id = collection_id
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_collection.links = [Link("root", "test_root_href"), Link("license", "https://test.com")]
@@ -1422,9 +1384,7 @@ def test_main_no_access_point(
     mock_collection = mock.Mock()
     mock_collection.id = "collection"
     mock_collection.update_extent_from_items.return_value = None
-    mock_collection.get_self_href.return_value = (
-        f"s3://{bucket}/{subfolder}/test_catalog/{collection_id}.json"
-    )
+    mock_collection.get_self_href.return_value = f"s3://{bucket}/{subfolder}/test_catalog/{collection_id}.json"
     mock_collection.get_items.return_value = [mock_item_1, mock_item_2]
     mock_pystac_Collection.return_value = mock_collection
 
@@ -1528,9 +1488,7 @@ def test_upload_annotation_success(mock_os_listdir, mock_normpath, mock_join, mo
     cat_id = "cat_id"
     file_name = "annotations.json"
 
-    result = upload_annotation(
-        s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix"
-    )
+    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix")
     assert result
     s3_client.upload_file.assert_called_once_with(
         "/test/output/prefix/annotations.json",
@@ -1555,9 +1513,7 @@ def test_upload_annotation_invalid_json(mock_os_listdir, mock_normpath, mock_joi
     cat_id = "cat_id"
     file_name = "annotations.json"
 
-    result = upload_annotation(
-        s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix"
-    )
+    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix")
     assert not result
     assert s3_client.upload_file.call_count == 0
 
@@ -1578,9 +1534,7 @@ def test_upload_annotation_file_not_found(mock_os_listdir, mock_normpath, mock_j
     cat_id = "cat_id"
     file_name = "annotations.json"
 
-    result = upload_annotation(
-        s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix"
-    )
+    result = upload_annotation(s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, "/test/output/prefix")
     assert not result
     assert s3_client.upload_file.call_count == 0
 
@@ -1696,7 +1650,7 @@ def test_handle_stac_outputs_no_collection_success(
         "test-workflow",
         "/test/output/prefix",
     )
-    assert result
+    assert result is not None
     mock_read_file.assert_called_once_with("/test/output/prefix/catalog.json")
     mock_write_file.assert_any_call(
         mock_collection,
@@ -1775,7 +1729,7 @@ def test_handle_stac_outputs_with_collection_success(
         "test-workflow",
         "/test/output/prefix",
     )
-    assert result
+    assert result is not None
     mock_read_file.assert_called_once_with("/test/output/prefix/catalog.json")
     mock_write_file.assert_any_call(
         mock_collection,
@@ -1817,9 +1771,7 @@ def test_handle_stac_outputs_file_not_found(mock_read_file):
 @patch("pystac.read_file")
 def test_handle_stac_outputs_stac_type_error(mock_read_file):
     s3_client = mock.Mock()
-    mock_read_file.side_effect = pystac.STACTypeError(
-        bad_dict={"id": "test"}, expected=pystac.Catalog
-    )
+    mock_read_file.side_effect = pystac.STACTypeError(bad_dict={"id": "test"}, expected=pystac.Catalog)
     s3_endpoint = "s3_endpoint"
     workspace_domain = "workspace_domain"
     workspace = "workspace"
