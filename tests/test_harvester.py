@@ -9,7 +9,7 @@ from moto import mock_aws
 from stageout.harvester import StageoutHarvester
 
 
-@pytest.fixture()
+@pytest.fixture
 def setenvvar(monkeypatch):
     with mock.patch.dict(os.environ, clear=True):
         envvars = {
@@ -30,12 +30,8 @@ def setenvvar(monkeypatch):
 def test_harvest_files(setenvvar):
     s3_client = boto3.client("s3", region_name="eu-west-2")
     bucket = "test-bucket"
-    s3_client.create_bucket(
-        Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": "eu-west-2"}
-    )
-    s3_client.put_object(
-        Bucket=bucket, Key="workspace/catalog.json", Body=json.dumps({"type": "Catalog"})
-    )
+    s3_client.create_bucket(Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": "eu-west-2"})
+    s3_client.put_object(Bucket=bucket, Key="workspace/catalog.json", Body=json.dumps({"type": "Catalog"}))
     s3_client.put_object(
         Bucket=bucket,
         Key="workspace/catalog/collection.json",
@@ -65,18 +61,12 @@ def test_harvest_files(setenvvar):
 
     assert len(harvested_keys) == 3
     assert "workflow-harvester/job-id/workspace/catalogs/catalog.json" in harvested_keys
+    assert "workflow-harvester/job-id/workspace/catalogs/catalog/collections/collection.json" in harvested_keys
     assert (
-        "workflow-harvester/job-id/workspace/catalogs/catalog/collections/collection.json"
-        in harvested_keys
-    )
-    assert (
-        "workflow-harvester/job-id/workspace/catalogs/catalog/collections/collection/items/item.json"
-        in harvested_keys
+        "workflow-harvester/job-id/workspace/catalogs/catalog/collections/collection/items/item.json" in harvested_keys
     )
 
-    assert s3_client.get_object(
-        Bucket=bucket, Key="workflow-harvester/job-id/workspace/catalogs/catalog.json"
-    )
+    assert s3_client.get_object(Bucket=bucket, Key="workflow-harvester/job-id/workspace/catalogs/catalog.json")
     assert s3_client.get_object(
         Bucket=bucket,
         Key="workflow-harvester/job-id/workspace/catalogs/catalog/collections/collection.json",
@@ -91,12 +81,8 @@ def test_harvest_files(setenvvar):
 def test_harvest_files_unknown_type(setenvvar):
     s3_client = boto3.client("s3", region_name="eu-west-2")
     bucket = "test-bucket"
-    s3_client.create_bucket(
-        Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": "eu-west-2"}
-    )
-    s3_client.put_object(
-        Bucket=bucket, Key="test/unknown.json", Body=json.dumps({"type": "Unknown"})
-    )
+    s3_client.create_bucket(Bucket=bucket, CreateBucketConfiguration={"LocationConstraint": "eu-west-2"})
+    s3_client.put_object(Bucket=bucket, Key="test/unknown.json", Body=json.dumps({"type": "Unknown"}))
 
     harvester = StageoutHarvester(
         s3_client=s3_client,
@@ -108,7 +94,7 @@ def test_harvest_files_unknown_type(setenvvar):
     )
 
     output_keys = ["test/unknown.json"]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown file type"):
         harvester.harvest_files(output_keys=output_keys)
 
 

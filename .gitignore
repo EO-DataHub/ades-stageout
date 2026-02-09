@@ -2,6 +2,5 @@
 venv*
 *.pyc
 .vscode
-
-.make-venv-installed
+.venv
 .pre-commit-config.yaml

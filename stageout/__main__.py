@@ -3,12 +3,15 @@ import logging
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from datetime import datetime
-from typing import List, Optional
+from typing import cast
 from urllib.parse import urlparse
 
 import boto3
 import botocore
+import botocore.client
+import botocore.session
 import pystac
 import requests
 from botocore.exceptions import ClientError
@@ -29,16 +32,14 @@ DELETE_FILES_FROM_PVC = os.getenv("DELETE_FILES_FROM_PVC", "true").lower() == "t
 class CustomStacIO(DefaultStacIO):
     """Custom STAC IO class that uses boto3 to read from S3."""
 
-    def __init__(self, s3_endpoint=None, workspace=None, workspace_domain=None):
+    def __init__(
+        self, s3_endpoint: str | None = None, workspace: str | None = None, workspace_domain: str | None = None
+    ) -> None:
         self.session = botocore.session.Session()
         self.s3_endpoint = s3_endpoint
         self.workspace = workspace
         self.workspace_domain = workspace_domain
-        if (
-            os.getenv("AWS_ACCESS_KEY_ID")
-            and os.getenv("AWS_SECRET_ACCESS_KEY")
-            and os.getenv("AWS_SESSION_TOKEN")
-        ):
+        if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY") and os.getenv("AWS_SESSION_TOKEN"):
             self.s3_client = self.session.create_client(
                 service_name="s3",
                 use_ssl=True,
@@ -51,7 +52,7 @@ class CustomStacIO(DefaultStacIO):
         else:
             self.s3_client = self.session.create_client("s3")
 
-    def write_text(self, dest, txt, *args, **kwargs):
+    def write_text(self, dest: str, txt: str, *args: str, **kwargs: str) -> None:
         parsed = urlparse(dest)
         print(f"Writing to {dest}", file=sys.stderr)
         # Construct expected workspace domain path
@@ -84,13 +85,9 @@ class CustomStacIO(DefaultStacIO):
             super().write_text(dest, txt, *args, **kwargs)
 
 
-def get_aws_client() -> boto3.client:
+def get_aws_client() -> botocore.client.BaseClient:
     # Configure AWS client
-    if (
-        os.getenv("AWS_ACCESS_KEY_ID")
-        and os.getenv("AWS_SECRET_ACCESS_KEY")
-        and os.getenv("AWS_SESSION_TOKEN")
-    ):
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY") and os.getenv("AWS_SESSION_TOKEN"):
         s3_client = boto3.client(
             service_name="s3",
             use_ssl=True,
@@ -105,7 +102,7 @@ def get_aws_client() -> boto3.client:
     return s3_client
 
 
-def upload_directory(s3_client: boto3.client, local_path: str, bucket: str, s3_path: str):
+def upload_directory(s3_client: botocore.client.BaseClient, local_path: str, bucket: str, s3_path: str) -> None:
     base_directory = os.path.basename(local_path)
     for root, _, files in os.walk(local_path):
         # Get path after the base directory
@@ -118,16 +115,16 @@ def upload_directory(s3_client: boto3.client, local_path: str, bucket: str, s3_p
             s3_client.upload_file(os.path.join(root, file), bucket, upload_path)
 
 
-def get_current_namespace():
+def get_current_namespace() -> str:
     try:
         with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace") as f:
             return f.read().strip()
-    except IOError:
+    except OSError:
         # Return default namespace
         return "default"
 
 
-def get_bucket_from_namespace() -> str:
+def get_bucket_from_namespace() -> str | None:
     # Load the kubernetes config
     config.load_incluster_config()
 
@@ -135,10 +132,13 @@ def get_bucket_from_namespace() -> str:
     v1 = client.CoreV1Api()
     try:
         # Read the ConfigMap
-        configmap = v1.read_namespaced_config_map(
-            name="workspace-config", namespace=get_current_namespace()
+        configmap = cast(
+            client.V1ConfigMap,
+            v1.read_namespaced_config_map(name="workspace-config", namespace=get_current_namespace()),
         )
-        bucket = configmap.data.get("S3_BUCKET_WORKSPACE")
+        data = configmap.data
+        assert data is not None
+        bucket = data.get("S3_BUCKET_WORKSPACE")
         return bucket
     except ApiException as e:
         print(f"Exception when fetching workspace bucket: {e}", file=sys.stderr)
@@ -151,7 +151,7 @@ def create_workflow_catalog(
     workspace_domain: str,
     bucket: str,
     child_cat: pystac.Catalog,
-) -> Optional[str]:
+) -> str | None:
     # If workflow results catalog doesn't yet exist, create the catalog and upload to S3
     catalog = pystac.Catalog(
         id=workflow_id,
@@ -171,14 +171,14 @@ def handle_assets(
     item: pystac.Item,
     collection: pystac.Collection,
     cat_id: str,
-    s3_client: boto3.client,
+    s3_client: botocore.client.BaseClient,
     s3_endpoint: str,
     subfolder: str,
     workspace: str,
     workspace_domain: str,
     bucket: str,
     output_prefix: str,
-):
+) -> None:
     for key, asset in item.get_assets().items():
         if asset.href.startswith(output_prefix):
             # Preserve file structure for local outputs
@@ -186,28 +186,28 @@ def handle_assets(
         else:
             # Compress to the file name for outputs from other sources
             relative_path = os.path.basename(asset.href)
-        s3_path = os.path.normpath(
-            os.path.join(workspace, subfolder, cat_id, collection.id, relative_path)
-        )
+        s3_path = os.path.normpath(os.path.join(workspace, subfolder, cat_id, collection.id, relative_path))
+        absolute_href = asset.get_absolute_href()
+        assert absolute_href is not None
         print(
-            f"Upload asset {asset.get_absolute_href()} to {s3_endpoint} at {s3_path}",
+            f"Upload asset {absolute_href} to {s3_endpoint} at {s3_path}",
             file=sys.stderr,
         )
         try:
-            if os.path.isdir(asset.get_absolute_href()):
+            if os.path.isdir(absolute_href):
                 # If the asset is a directory, use upload_directory
-                upload_directory(s3_client, asset.get_absolute_href(), s3_endpoint, s3_path)
+                upload_directory(s3_client, absolute_href, s3_endpoint, s3_path)
                 rewrite_asset_href = True
             else:
                 s3_client.upload_file(
-                    asset.get_absolute_href(),
+                    absolute_href,
                     s3_endpoint,
                     s3_path,
                 )
                 rewrite_asset_href = True
         except Exception as e:
             print(
-                f"Failed to upload asset {asset.get_absolute_href()} to {s3_endpoint} at {subfolder}: {e}",
+                f"Failed to upload asset {absolute_href} to {s3_endpoint} at {subfolder}: {e}",
                 file=sys.stderr,
             )
             rewrite_asset_href = False
@@ -216,13 +216,14 @@ def handle_assets(
         if rewrite_asset_href:
             # Remove workspace name from s3_path
             prefix = f"{workspace}/"
-            if s3_path.startswith(prefix):
-                s3_path = s3_path[len(prefix) :]
+            s3_path = s3_path.removeprefix(prefix)
             # Replace href with workspace-accessible url
             asset.href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{s3_path}"
             print(f"Replacing asset href with {asset.href}", file=sys.stderr)
             item.add_asset(key, asset)
-    item_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
+    item_href = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}/{item.id}.json"
+    )
     item.set_self_href(item_href)
 
 
@@ -230,8 +231,8 @@ def construct_collection_and_upload_assets(
     cat: pystac.Catalog,
     collection: pystac.Collection,
     cat_id: str,
-    s3_client: boto3.client,
-    s3_data: dict,
+    s3_client: botocore.client.BaseClient,
+    s3_data: dict[str, str],
     output_prefix: str,
 ) -> pystac.Collection:
 
@@ -242,7 +243,6 @@ def construct_collection_and_upload_assets(
     bucket = s3_data["bucket"]
 
     for item in cat.get_items():
-
         item.set_collection(collection)
 
         collection.add_item(item)
@@ -270,10 +270,12 @@ def upload_items(
     bucket: str,
     workspace: str,
     subfolder: str,
-) -> List[str]:
+) -> list[str]:
     files_for_harvesting = []
     for item in collection.get_items():
         # upload item to S3
+        self_href = item.get_self_href()
+        assert self_href is not None
         s3_path = "s3://" + os.path.normpath(
             os.path.join(
                 bucket,
@@ -281,7 +283,7 @@ def upload_items(
                 subfolder,
                 cat_id,
                 collection_id,
-                os.path.basename(item.get_self_href()),
+                os.path.basename(self_href),
             )
         )
         print(f"Upload {item.id} to {s3_path}", file=sys.stderr)
@@ -292,18 +294,18 @@ def upload_items(
 
 
 def generate_new_collection(
-    collection_id,
-    cat,
-    s3_client,
-    s3_endpoint,
-    workspace,
-    workspace_domain,
-    bucket,
-    subfolder,
-    cat_id,
-    job_id,
-    workflow_id,
-    output_prefix,
+    collection_id: str,
+    cat: pystac.Catalog,
+    s3_client: botocore.client.BaseClient,
+    s3_endpoint: str,
+    workspace: str,
+    workspace_domain: str,
+    bucket: str,
+    subfolder: str,
+    cat_id: str,
+    job_id: str,
+    workflow_id: str,
+    output_prefix: str,
 ) -> list[str]:
     # create a STAC collection for the process
     date = datetime.now().strftime("%Y-%m-%d")
@@ -339,9 +341,7 @@ def generate_new_collection(
         "bucket": bucket,
     }
 
-    collection = construct_collection_and_upload_assets(
-        cat, collection, cat_id, s3_client, s3_data, output_prefix
-    )
+    collection = construct_collection_and_upload_assets(cat, collection, cat_id, s3_client, s3_data, output_prefix)
 
     collection.update_extent_from_items()
 
@@ -350,14 +350,14 @@ def generate_new_collection(
     cat.add_child(collection)
 
     # Upload collection to S3
-    collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}.json"
+    collection_href = (
+        f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection_id}.json"
+    )
     collection.set_self_href(collection_href)
     print(f"Upload collection.json to {collection_href}", file=sys.stderr)
     pystac.write_file(collection, dest_href=collection_href)
 
-    files_for_harvesting = upload_items(
-        collection, cat_id, collection_id, bucket, workspace, subfolder
-    )
+    files_for_harvesting = upload_items(collection, cat_id, collection_id, bucket, workspace, subfolder)
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}.json")
     files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection_id}.json")
 
@@ -370,10 +370,16 @@ def generate_new_collection(
 
 
 def upload_annotation(
-    s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, output_prefix
+    s3_client: botocore.client.BaseClient,
+    s3_endpoint: str,
+    workspace: str,
+    subfolder: str,
+    cat_id: str,
+    file_name: str,
+    output_prefix: str,
 ) -> bool:
     try:
-        with open(os.path.join(output_prefix, file_name), "r") as file:
+        with open(os.path.join(output_prefix, file_name)) as file:
             try:
                 # Check if file is valid JSON
                 _ = json.load(file)
@@ -387,9 +393,7 @@ def upload_annotation(
 
     # Construct path for annotations in S3
     s3_path = os.path.normpath(
-        os.path.join(
-            workspace, subfolder, cat_id, file_name
-        )  # save annotations at collection level
+        os.path.join(workspace, subfolder, cat_id, file_name)  # save annotations at collection level
     )
 
     # Upload annotations to S3
@@ -408,7 +412,13 @@ def upload_annotation(
 
 
 def handle_annotations(
-    s3_client, s3_endpoint, workspace, subfolder, catalog_id, job_id, output_prefix
+    s3_client: botocore.client.BaseClient,
+    s3_endpoint: str,
+    workspace: str,
+    subfolder: str,
+    catalog_id: str,
+    job_id: str,
+    output_prefix: str,
 ) -> list[str]:
     """
     Handle annotations defined in the annotations.json file
@@ -421,32 +431,27 @@ def handle_annotations(
 
     # Identify all annotations files
     for file_name in os.listdir(output_prefix):
-        if file_name.endswith("-annotations.json"):
-            if upload_annotation(
-                s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, output_prefix
-            ):
-                added_annotations.append(f"{workspace}/{subfolder}/{cat_id}/{file_name}")
+        if file_name.endswith("-annotations.json") and upload_annotation(
+            s3_client, s3_endpoint, workspace, subfolder, cat_id, file_name, output_prefix
+        ):
+            added_annotations.append(f"{workspace}/{subfolder}/{cat_id}/{file_name}")
 
-    # Send annotations to ingester
-    if added_annotations:
-        return added_annotations
-
-    return False
+    return added_annotations
 
 
 def handle_current_collection(
-    s3_client,
-    s3_endpoint,
-    cat,
-    collections,
-    cat_id,
-    workspace_domain,
-    bucket,
-    workspace,
-    subfolder,
-    workflow_id,
-    job_id,
-    output_prefix,
+    s3_client: botocore.client.BaseClient,
+    s3_endpoint: str,
+    cat: pystac.Catalog,
+    collections: list[pystac.Collection],
+    cat_id: str,
+    workspace_domain: str,
+    bucket: str,
+    workspace: str,
+    subfolder: str,
+    workflow_id: str,
+    job_id: str,
+    output_prefix: str,
 ) -> list[str]:
 
     files_for_harvesting = []
@@ -464,7 +469,6 @@ def handle_current_collection(
     hosted_zone = os.getenv("HOSTED_ZONE")
 
     for collection in collections:
-
         if not collection.id:
             # If collection id is not set, generate a new one
             collection.id = f"col_{job_id}"
@@ -495,9 +499,7 @@ def handle_current_collection(
                     )
                     collection.links.remove(link)
                     collection.add_link(new_link)
-                    print(
-                        f"Licence file exists, no need to re-upload {public_url}", file=sys.stderr
-                    )
+                    print(f"Licence file exists, no need to re-upload {public_url}", file=sys.stderr)
                     continue
                 except ClientError:
                     # File does not exist, proceed with upload
@@ -507,7 +509,7 @@ def handle_current_collection(
                 if not license_href.startswith("http"):
                     # It's a relative link, read the file
                     license_path = os.path.join(output_prefix, license_href)
-                    with open(license_path, "r") as file:
+                    with open(license_path) as file:
                         license_content = file.read()
                 else:
                     # It's an external URL, download the file
@@ -533,15 +535,11 @@ def handle_current_collection(
                     Bucket=public_bucket,
                     Key=public_path,
                     Body=license_content,
-                    ContentType=(
-                        "text/html" if license_filename.endswith(".html") else "text/plain"
-                    ),
+                    ContentType=("text/html" if license_filename.endswith(".html") else "text/plain"),
                 )
                 print(f"License uploaded to {public_path}", file=sys.stderr)
                 # Update the license link to point to the new public URL
-                new_link = pystac.Link(
-                    rel=link.rel, target=public_url, media_type=link.media_type, title=link.title
-                )
+                new_link = pystac.Link(rel=link.rel, target=public_url, media_type=link.media_type, title=link.title)
                 collection.links.remove(link)
                 collection.add_link(new_link)
 
@@ -565,11 +563,11 @@ def handle_current_collection(
                 output_prefix + "/",
             )
 
-        files_for_harvesting += upload_items(
-            collection, cat_id, collection.id, bucket, workspace, subfolder
-        )
+        files_for_harvesting += upload_items(collection, cat_id, collection.id, bucket, workspace, subfolder)
         # Upload collection to S3
-        collection_href = f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
+        collection_href = (
+            f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}/{cat_id}/{collection.id}.json"
+        )
         print(f"Upload collection {collection.id}.json to {collection_href}", file=sys.stderr)
         pystac.write_file(collection, dest_href=collection_href)
         files_for_harvesting.append(f"{workspace}/{subfolder}/{cat_id}/{collection.id}.json")
@@ -582,28 +580,28 @@ def handle_current_collection(
 
 
 def handle_stac_outputs(
-    s3_client,
-    s3_endpoint,
-    workspace_domain,
-    workspace,
-    bucket,
-    subfolder,
-    job_id,
-    workflow_id,
-    output_prefix,
-) -> tuple:
+    s3_client: botocore.client.BaseClient,
+    s3_endpoint: str,
+    workspace_domain: str,
+    workspace: str,
+    bucket: str,
+    subfolder: str,
+    job_id: str,
+    workflow_id: str,
+    output_prefix: str,
+) -> tuple[str, list[str]]:
 
     try:
-        cat = pystac.read_file(os.path.join(output_prefix, "catalog.json"))
+        cat = cast(pystac.Catalog, pystac.read_file(os.path.join(output_prefix, "catalog.json")))
     except FileNotFoundError:
         print(f"Failed find STAC Catalog at {output_prefix}", file=sys.stderr)
-        return "", False
+        return "", []
     except pystac.STACTypeError:
         print("Failed to read STAC Catalog", file=sys.stderr)
-        return "", False
+        return "", []
     except json.JSONDecodeError as e:
         print(f"Failed to read STAC Catalog: {e}", file=sys.stderr)
-        return "", False
+        return "", []
 
     # Create new catalog id
     cat_id = cat.id
@@ -620,7 +618,9 @@ def handle_stac_outputs(
 
     cat.normalize_hrefs(f"https://{workspace}.{workspace_domain}/files/{bucket}/{subfolder}")
 
-    cat_href = cat.get_self_href().replace("/catalog.json", f"/{cat_id}.json", 1)
+    self_href = cat.get_self_href()
+    assert self_href is not None
+    cat_href = self_href.replace("/catalog.json", f"/{cat_id}.json", 1)
     cat.set_self_href(cat_href)
 
     for index, link in enumerate(cat.links):
@@ -664,16 +664,14 @@ def handle_stac_outputs(
     print(f"Upload catalog.json to {cat_href}", file=sys.stderr)
     pystac.write_file(cat, dest_href=cat_href)
 
-    file_key = create_workflow_catalog(
-        workflow_id, subfolder, workspace, workspace_domain, bucket, cat
-    )
+    file_key = create_workflow_catalog(workflow_id, subfolder, workspace, workspace_domain, bucket, cat)
     if file_key:
         output_keys.append(file_key)
 
     return cat_id, output_keys
 
 
-def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: str, job_url: str):
+def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: str, job_url: str) -> None:
 
     s3_endpoint = bucket
     workspace_domain = os.environ["WORKSPACE_DOMAIN"]
@@ -686,13 +684,13 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
     s3_client = get_aws_client()
 
     # Create harvester
-    stageout_harvester = StageoutHarvester(
-        s3_client, bucket, os.getenv("PULSAR_URL"), OUTPUT_ROOT, job_id, job_url
-    )
+    stageout_harvester = StageoutHarvester(s3_client, bucket, os.getenv("PULSAR_URL"), OUTPUT_ROOT, job_id, job_url)
 
     # Set custom STAC IO
-    def custom_stac_io_factory(s3_endpoint, workspace=workspace, workspace_domain=workspace_domain):
-        def create_custom_stac_io():
+    def custom_stac_io_factory(
+        s3_endpoint: str, workspace: str = workspace, workspace_domain: str = workspace_domain
+    ) -> Callable[[], CustomStacIO]:
+        def create_custom_stac_io() -> CustomStacIO:
             return CustomStacIO(
                 s3_endpoint=s3_endpoint,
                 workspace=workspace,
@@ -715,13 +713,11 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
         cat_url,
     )
 
-    output_annotations = handle_annotations(
-        s3_client, s3_endpoint, workspace, subfolder, cat_id, job_id, cat_url
-    )
+    output_annotations = handle_annotations(s3_client, s3_endpoint, workspace, subfolder, cat_id, job_id, cat_url)
 
     if not output_keys and not output_annotations:
         print("No outputs generated, stageout failed", file=sys.stderr)
-        raise
+        raise RuntimeError("No outputs generated, stageout failed")
 
     # Harvest STAC Outputs
     if output_keys:
@@ -730,9 +726,7 @@ def main(cat_url: str, bucket: str, subfolder: str, job_id: str, workflow_id: st
 
         # Ingest Outputs
         print(harvested_keys, file=sys.stderr)
-        stageout_harvester.send_to_ingester(
-            harvested_keys, workspace, "harvested", "ades-outputs-stac", job_id
-        )
+        stageout_harvester.send_to_ingester(harvested_keys, workspace, "harvested", "ades-outputs-stac", job_id)
 
     # Harvest Annotations
     if output_annotations:
