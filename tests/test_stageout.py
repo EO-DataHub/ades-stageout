@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from unittest import mock
 from unittest.mock import mock_open, patch
 
@@ -412,6 +413,35 @@ def test_construct_collection_and_upload_assets():
 
     # Check output result
     assert result
+
+
+def test_construct_collection_and_upload_assets_local_path_with_https_self_href():
+    """An absolute local asset path is uploaded as is when the item has an https self href"""
+    item = pystac.Item("item", None, None, datetime(2024, 1, 1), {})
+    item.set_self_href("https://test_workspace.test.workspace.domain.com/files/bucket/item.json")
+    item.add_asset("data", pystac.Asset("/var/lib/cwl/out/file.png"))
+    mock_catalog = mock.Mock()
+    mock_catalog.get_items.return_value = [item]
+    mock_collection = mock.Mock()
+    mock_collection.id = "test_collection"
+    mock_s3_client = mock.Mock()
+    s3_data = {
+        "s3_endpoint": "test-bucket",
+        "subfolder": "test_subfolder",
+        "workspace": "test_workspace",
+        "workspace_domain": "test.workspace.domain.com",
+        "bucket": "test_bucket",
+    }
+
+    construct_collection_and_upload_assets(
+        mock_catalog, mock_collection, "test_catalog", mock_s3_client, s3_data, "/var/lib/cwl/out"
+    )
+
+    assert mock_s3_client.upload_file.call_args[0][0] == "/var/lib/cwl/out/file.png"
+    assert item.assets["data"].href == (
+        "https://test_workspace.test.workspace.domain.com/files/test_bucket/"
+        "test_subfolder/test_catalog/test_collection/file.png"
+    )
 
 
 def test_construct_collection_and_upload_assets_external_links():

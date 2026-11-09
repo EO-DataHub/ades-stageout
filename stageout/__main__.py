@@ -187,7 +187,8 @@ def handle_assets(
             # Compress to the file name for outputs from other sources
             relative_path = os.path.basename(asset.href)
         s3_path = os.path.normpath(os.path.join(workspace, subfolder, cat_id, collection.id, relative_path))
-        absolute_href = asset.get_absolute_href()
+        # pystac >= 1.14 resolves an absolute local path against an https self href
+        absolute_href = asset.href if os.path.isabs(asset.href) else asset.get_absolute_href()
         assert absolute_href is not None
         print(
             f"Upload asset {absolute_href} to {s3_endpoint} at {s3_path}",
